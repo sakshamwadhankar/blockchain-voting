@@ -1,6 +1,8 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import Webcam from "react-webcam";
+import Tesseract from "tesseract.js";
+import * as faceapi from "face-api.js";
 import { useWallet } from "../context/WalletContext";
 import { BACKEND_URL } from "../config/contracts";
 
@@ -18,13 +20,19 @@ export default function VerifyIdentity() {
     // Step machine: 1 = ID Scan, 2 = Face Scan, 3 = OTP
     const [step, setStep] = useState(1);
 
+    // AI model loading
+    const [modelsLoaded, setModelsLoaded] = useState(false);
+
     // Step 1 state
     const [idImage, setIdImage] = useState(null);
     const [employeeId, setEmployeeId] = useState("");
     const [employeeName, setEmployeeName] = useState("");
+    const [scanning, setScanning] = useState(false);
+    const [ocrProgress, setOcrProgress] = useState(0);
 
     // Step 2 state
     const [faceImage, setFaceImage] = useState(null);
+    const [detectingFace, setDetectingFace] = useState(false);
 
     // Step 3 state
     const [otp, setOtp] = useState("");
@@ -36,7 +44,29 @@ export default function VerifyIdentity() {
     const [status, setStatus] = useState({ type: "", message: "" });
     const [txHash, setTxHash] = useState("");
 
-    // ── Capture helpers ────────────────────────────
+    // ── Load face-api models on mount ──────────────
+    useEffect(() => {
+        async function loadModels() {
+            try {
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri("/models"),
+                    faceapi.nets.faceLandmark68Net.loadFromUri("/models"),
+                    faceapi.nets.faceRecognitionNet.loadFromUri("/models"),
+                ]);
+                setModelsLoaded(true);
+                console.log("Face-api models loaded");
+            } catch (err) {
+                console.error("Failed to load face-api models:", err);
+                setStatus({
+                    type: "error",
+                    message: "Failed to load AI models. Check /public/models folder.",
+                });
+            }
+        }
+        loadModels();
+    }, []);
+
+    // ── Capture helper ─────────────────────────────
     const capturePhoto = useCallback(() => {
         if (webcamRef.current) {
             return webcamRef.current.getScreenshot();
@@ -44,48 +74,132 @@ export default function VerifyIdentity() {
         return null;
     }, []);
 
-    // ── Step 1: Capture ID ─────────────────────────
-    const handleCaptureId = () => {
+    // ── Step 1: Capture ID + OCR ───────────────────
+    const handleCaptureId = async () => {
         const img = capturePhoto();
-        if (img) {
-            setIdImage(img);
-            setStatus({ type: "success", message: "ID captured! Enter your Employee ID below." });
+        if (!img) return;
+        setIdImage(img);
+        setScanning(true);
+        setOcrProgress(0);
+        setStatus({ type: "", message: "🔍 Scanning ID card with OCR..." });
+
+        try {
+            const result = await Tesseract.recognize(img, "eng", {
+                logger: (m) => {
+                    if (m.status === "recognizing text") {
+                        setOcrProgress(Math.round(m.progress * 100));
+                    }
+                },
+            });
+
+            const text = result.data.text;
+            console.log("OCR Result:", text);
+
+            // Search for employee ID pattern (MNC-XXX)
+            const match = text.match(/MNC-\d{3}/i);
+
+            if (match) {
+                const detected = match[0].toUpperCase();
+                setEmployeeId(detected);
+                setStatus({
+                    type: "success",
+                    message: `✨ ID Detected: ${detected} — Verifying with database...`,
+                });
+                // Auto-verify against backend
+                await verifyEmployeeId(detected);
+            } else {
+                setStatus({
+                    type: "error",
+                    message: "Could not detect Employee ID. Please type it manually below.",
+                });
+            }
+        } catch (err) {
+            console.error("OCR error:", err);
+            setStatus({
+                type: "error",
+                message: "OCR scan failed. Please enter ID manually.",
+            });
         }
+        setScanning(false);
     };
 
-    const handleIdSubmit = async () => {
-        if (!employeeId.trim()) {
-            return setStatus({ type: "error", message: "Please enter your Employee ID" });
-        }
+    // ── Verify employee ID against backend ─────────
+    const verifyEmployeeId = async (id) => {
         setLoading(true);
-        setStatus({ type: "", message: "" });
         try {
-            const res = await fetch(`${BACKEND_URL}/employee/${employeeId.trim()}`);
+            const res = await fetch(`${BACKEND_URL}/employee/${id.trim()}`);
             const data = await res.json();
             if (data.success) {
                 setEmployeeName(data.data.name);
-                setStatus({ type: "success", message: `Welcome, ${data.data.name}! Proceed to face scan.` });
+                setStatus({
+                    type: "success",
+                    message: `Welcome, ${data.data.name}! Proceed to face scan.`,
+                });
                 setStep(2);
             } else {
                 setStatus({ type: "error", message: data.message });
             }
         } catch {
-            setStatus({ type: "error", message: "Cannot reach server. Is the backend running?" });
+            setStatus({
+                type: "error",
+                message: "Cannot reach server. Is the backend running?",
+            });
         }
         setLoading(false);
     };
 
-    // ── Step 2: Capture Face ───────────────────────
-    const handleCaptureFace = () => {
+    const handleIdSubmit = () => verifyEmployeeId(employeeId);
+
+    // ── Step 2: Capture Face + Detection ───────────
+    const handleCaptureFace = async () => {
         const img = capturePhoto();
-        if (img) {
-            setFaceImage(img);
-            setStatus({ type: "success", message: "Face captured! Proceeding to OTP verification..." });
+        if (!img) return;
+        setFaceImage(img);
+        setDetectingFace(true);
+        setStatus({ type: "", message: "🧠 Analyzing face..." });
+
+        try {
+            // Create an image element for face-api
+            const image = new Image();
+            image.src = img;
+            await new Promise((resolve) => (image.onload = resolve));
+
+            const detection = await faceapi
+                .detectSingleFace(image, new faceapi.SsdMobilenetv1Options())
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+
+            if (!detection) {
+                setFaceImage(null);
+                setDetectingFace(false);
+                setStatus({
+                    type: "error",
+                    message: "❌ No face detected. Please align your face in the oval and try again.",
+                });
+                return;
+            }
+
+            // Face detected — show confidence
+            const confidence = (detection.detection.score * 100).toFixed(1);
+            setStatus({
+                type: "success",
+                message: `✅ Face detected (${confidence}% confidence). Proceeding to OTP...`,
+            });
+            setDetectingFace(false);
+
             // Auto-advance to step 3 and send OTP
             setTimeout(() => {
                 setStep(3);
                 sendOTP();
-            }, 800);
+            }, 1000);
+        } catch (err) {
+            console.error("Face detection error:", err);
+            setFaceImage(null);
+            setDetectingFace(false);
+            setStatus({
+                type: "error",
+                message: "Face detection failed. Please try again.",
+            });
         }
     };
 
@@ -103,7 +217,10 @@ export default function VerifyIdentity() {
             if (data.success) {
                 setMaskedPhone(data.maskedPhone || "your phone");
                 setOtpSent(true);
-                setStatus({ type: "success", message: `OTP sent to ${data.maskedPhone || "your phone"}` });
+                setStatus({
+                    type: "success",
+                    message: `OTP sent to ${data.maskedPhone || "your phone"}`,
+                });
             } else {
                 setStatus({ type: "error", message: data.message });
             }
@@ -131,7 +248,10 @@ export default function VerifyIdentity() {
             const data = await res.json();
             if (data.success) {
                 setTxHash(data.transactionHash);
-                setStatus({ type: "success", message: "✅ Verification complete! Redirecting to vote..." });
+                setStatus({
+                    type: "success",
+                    message: "✅ Verification complete! Redirecting to vote...",
+                });
                 setTimeout(() => navigate("/vote"), 2000);
             } else {
                 setStatus({ type: "error", message: data.message });
@@ -165,8 +285,13 @@ export default function VerifyIdentity() {
                     Identity Verification
                 </h1>
                 <p className="text-slate-400 mt-1">
-                    Scan your ID, verify your face, and confirm with OTP
+                    AI-powered ID scan, face detection, and OTP verification
                 </p>
+                {!modelsLoaded && (
+                    <p className="text-amber-400 text-xs mt-2 animate-pulse">
+                        ⏳ Loading AI models...
+                    </p>
+                )}
             </div>
 
             {/* ── Progress Steps ────────────────────────── */}
@@ -188,12 +313,18 @@ export default function VerifyIdentity() {
                             >
                                 {step > n ? "✓" : n}
                             </div>
-                            <span className={`text-xs mt-1 ${step >= n ? "text-slate-300" : "text-slate-600"}`}>
+                            <span
+                                className={`text-xs mt-1 ${step >= n ? "text-slate-300" : "text-slate-600"
+                                    }`}
+                            >
                                 {label}
                             </span>
                         </div>
                         {n < 3 && (
-                            <div className={`w-16 h-0.5 mb-5 ${step > n ? "bg-emerald-500" : "bg-slate-700"}`} />
+                            <div
+                                className={`w-16 h-0.5 mb-5 ${step > n ? "bg-emerald-500" : "bg-slate-700"
+                                    }`}
+                            />
                         )}
                     </div>
                 ))}
@@ -212,7 +343,7 @@ export default function VerifyIdentity() {
             )}
 
             {/* ══════════════════════════════════════════════
-          STEP 1: Scan ID
+          STEP 1: Scan ID + OCR
          ══════════════════════════════════════════════ */}
             {step === 1 && (
                 <div className="glass p-6 space-y-5 animate-fade-up">
@@ -243,34 +374,58 @@ export default function VerifyIdentity() {
                                 <div className="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-cyan-400 rounded-br-lg" />
                             </div>
                         )}
+                        {/* OCR scanning overlay */}
+                        {scanning && (
+                            <div className="absolute inset-0 bg-slate-900/70 flex flex-col items-center justify-center">
+                                <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mb-4" />
+                                <p className="text-cyan-300 font-medium">Scanning ID Card...</p>
+                                <div className="w-48 h-2 bg-slate-700 rounded-full mt-3 overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-cyan-400 to-indigo-400 rounded-full transition-all duration-300"
+                                        style={{ width: `${ocrProgress}%` }}
+                                    />
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2">{ocrProgress}%</p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Capture / Retake */}
                     {!idImage ? (
                         <button
                             onClick={handleCaptureId}
+                            disabled={scanning}
                             className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer
                          bg-gradient-to-r from-cyan-500 to-blue-500
                          hover:from-cyan-400 hover:to-blue-400
+                         disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-300 shadow-lg shadow-cyan-500/20"
                         >
-                            📸 Capture ID
+                            📸 Capture & Scan ID
                         </button>
                     ) : (
-                        <button
-                            onClick={() => { setIdImage(null); setStatus({ type: "", message: "" }); }}
-                            className="w-full py-2.5 rounded-xl font-semibold text-slate-300 cursor-pointer
-                         border border-slate-600 hover:bg-slate-700/50 transition-colors"
-                        >
-                            🔄 Retake Photo
-                        </button>
+                        !scanning && (
+                            <button
+                                onClick={() => {
+                                    setIdImage(null);
+                                    setEmployeeId("");
+                                    setStatus({ type: "", message: "" });
+                                }}
+                                className="w-full py-2.5 rounded-xl font-semibold text-slate-300 cursor-pointer
+                           border border-slate-600 hover:bg-slate-700/50 transition-colors"
+                            >
+                                🔄 Retake Photo
+                            </button>
+                        )
                     )}
 
-                    {/* Employee ID input (temporary until OCR) */}
-                    {idImage && (
+                    {/* Manual Employee ID input (fallback if OCR fails) */}
+                    {idImage && !scanning && (
                         <div className="space-y-3 pt-2 border-t border-slate-700/50">
                             <label className="block text-sm text-slate-400">
-                                Enter Employee ID from your card
+                                {employeeId
+                                    ? "Detected Employee ID (edit if incorrect)"
+                                    : "OCR couldn't auto-detect. Enter Employee ID manually:"}
                             </label>
                             <input
                                 type="text"
@@ -283,7 +438,7 @@ export default function VerifyIdentity() {
                             />
                             <button
                                 onClick={handleIdSubmit}
-                                disabled={loading}
+                                disabled={loading || !employeeId.trim()}
                                 className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer
                            bg-gradient-to-r from-indigo-500 to-purple-500
                            hover:from-indigo-400 hover:to-purple-400
@@ -298,7 +453,7 @@ export default function VerifyIdentity() {
             )}
 
             {/* ══════════════════════════════════════════════
-          STEP 2: Face Scan
+          STEP 2: Face Scan + AI Detection
          ══════════════════════════════════════════════ */}
             {step === 2 && (
                 <div className="glass p-6 space-y-5 animate-fade-up">
@@ -308,6 +463,12 @@ export default function VerifyIdentity() {
                             Welcome, {employeeName}
                         </span>
                     </h2>
+
+                    {!modelsLoaded && (
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm">
+                            ⏳ Loading face detection AI... Please wait.
+                        </div>
+                    )}
 
                     {/* Camera with face oval overlay */}
                     <div className="relative rounded-xl overflow-hidden bg-slate-900 border border-slate-700/50">
@@ -337,29 +498,50 @@ export default function VerifyIdentity() {
                                 </p>
                             </div>
                         )}
+                        {/* Detecting face overlay */}
+                        {detectingFace && (
+                            <div className="absolute inset-0 bg-slate-900/70 flex flex-col items-center justify-center">
+                                <div className="w-12 h-12 border-4 border-emerald-400 border-t-transparent rounded-full animate-spin mb-4" />
+                                <p className="text-emerald-300 font-medium">
+                                    🧠 Analyzing face...
+                                </p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Running neural network detection
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {/* Capture / Retake */}
                     {!faceImage ? (
                         <button
                             onClick={handleCaptureFace}
+                            disabled={!modelsLoaded || detectingFace}
                             className="w-full py-3 rounded-xl font-semibold text-white cursor-pointer
                          bg-gradient-to-r from-emerald-500 to-cyan-500
                          hover:from-emerald-400 hover:to-cyan-400
+                         disabled:opacity-50 disabled:cursor-not-allowed
                          transition-all duration-300 shadow-lg shadow-emerald-500/20"
                         >
-                            📸 Capture Face
+                            {!modelsLoaded
+                                ? "⏳ Loading AI..."
+                                : detectingFace
+                                    ? "🧠 Detecting..."
+                                    : "📸 Capture & Verify Face"}
                         </button>
                     ) : (
-                        <div className="flex gap-3">
+                        !detectingFace && (
                             <button
-                                onClick={() => { setFaceImage(null); setStatus({ type: "", message: "" }); }}
-                                className="flex-1 py-2.5 rounded-xl font-semibold text-slate-300 cursor-pointer
+                                onClick={() => {
+                                    setFaceImage(null);
+                                    setStatus({ type: "", message: "" });
+                                }}
+                                className="w-full py-2.5 rounded-xl font-semibold text-slate-300 cursor-pointer
                            border border-slate-600 hover:bg-slate-700/50 transition-colors"
                             >
                                 🔄 Retake
                             </button>
-                        </div>
+                        )
                     )}
 
                     <button
@@ -384,28 +566,36 @@ export default function VerifyIdentity() {
                     <div className="flex gap-3">
                         {idImage && (
                             <div className="flex-1">
-                                <p className="text-xs text-slate-500 mb-1">ID Card</p>
-                                <img src={idImage} alt="ID" className="w-full rounded-lg border border-slate-700/50 opacity-70" />
+                                <p className="text-xs text-slate-500 mb-1">ID Card ✓</p>
+                                <img
+                                    src={idImage}
+                                    alt="ID"
+                                    className="w-full rounded-lg border border-emerald-500/30 opacity-70"
+                                />
                             </div>
                         )}
                         {faceImage && (
                             <div className="flex-1">
-                                <p className="text-xs text-slate-500 mb-1">Face</p>
-                                <img src={faceImage} alt="Face" className="w-full rounded-lg border border-slate-700/50 opacity-70" />
+                                <p className="text-xs text-slate-500 mb-1">Face ✓</p>
+                                <img
+                                    src={faceImage}
+                                    alt="Face"
+                                    className="w-full rounded-lg border border-emerald-500/30 opacity-70"
+                                />
                             </div>
                         )}
                     </div>
 
                     <div className="text-center py-2">
                         <p className="text-slate-400 text-sm">
-                            {otpSent
-                                ? `OTP sent to ${maskedPhone}`
-                                : "Sending OTP..."}
+                            {otpSent ? `OTP sent to ${maskedPhone}` : "Sending OTP..."}
                         </p>
                     </div>
 
                     <div>
-                        <label className="block text-sm text-slate-400 mb-2">Enter 6-digit OTP</label>
+                        <label className="block text-sm text-slate-400 mb-2">
+                            Enter 6-digit OTP
+                        </label>
                         <input
                             type="text"
                             value={otp}
@@ -432,7 +622,12 @@ export default function VerifyIdentity() {
 
                     <div className="flex gap-3">
                         <button
-                            onClick={() => { setStep(2); setFaceImage(null); setOtpSent(false); setStatus({ type: "", message: "" }); }}
+                            onClick={() => {
+                                setStep(2);
+                                setFaceImage(null);
+                                setOtpSent(false);
+                                setStatus({ type: "", message: "" });
+                            }}
                             className="flex-1 py-2 text-sm text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
                         >
                             ← Back to Face Scan
@@ -455,14 +650,20 @@ export default function VerifyIdentity() {
             {txHash && (
                 <div className="glass p-8 text-center space-y-4 animate-fade-up">
                     <div className="text-7xl mb-2">✅</div>
-                    <h2 className="text-2xl font-bold text-emerald-400">Verification Complete!</h2>
+                    <h2 className="text-2xl font-bold text-emerald-400">
+                        Verification Complete!
+                    </h2>
                     <p className="text-slate-400">
-                        Welcome, <strong className="text-white">{employeeName}</strong>. Your wallet is now authorized to vote.
+                        Welcome,{" "}
+                        <strong className="text-white">{employeeName}</strong>. Your wallet
+                        is now authorized to vote.
                     </p>
                     <p className="text-xs text-slate-500 break-all">
                         TX: <span className="text-indigo-400 font-mono">{txHash}</span>
                     </p>
-                    <p className="text-sm text-slate-500 mt-4">Redirecting to voting booth...</p>
+                    <p className="text-sm text-slate-500 mt-4">
+                        Redirecting to voting booth...
+                    </p>
                 </div>
             )}
         </div>
