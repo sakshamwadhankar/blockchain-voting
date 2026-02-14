@@ -7,11 +7,14 @@ const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const { ethers } = require('ethers');
 
+// ── Mock Employee Database ──────────────────────────────
+const employees = require('./data/employees.json');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "*", // Adjust for production
+        origin: "*",
         methods: ["GET", "POST"]
     }
 });
@@ -19,11 +22,11 @@ const io = new Server(server, {
 app.use(cors());
 app.use(bodyParser.json());
 
-// Twilio Setup
+// ── Twilio Setup ────────────────────────────────────────
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
 
-// Blockchain Setup (Oracle Backend)
+// ── Blockchain Setup (Oracle Backend) ───────────────────
 const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
 const wallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, provider);
 const governanceAddress = process.env.GOVERNANCE_CONTRACT_ADDRESS;
@@ -40,11 +43,15 @@ const governanceAbi = [
 
 const governanceContract = new ethers.Contract(governanceAddress, governanceAbi, wallet);
 
-// Mock Database for Sybil Protection
-const aadhaarToAddress = {};
-const addressToAadhaar = {};
+// ── Sybil Protection (employeeId → wallet) ──────────────
+const verifiedEmployees = {}; // employeeId → walletAddress
 
-// --- Real-Time Event Listeners ---
+// ── Helper: find employee by ID ─────────────────────────
+function findEmployee(employeeId) {
+    return employees.find(e => e.employeeId === employeeId) || null;
+}
+
+// ── Real-Time Event Listeners ───────────────────────────
 
 governanceContract.on("ProposalCreated", (id, proposer, description) => {
     console.log(`New Proposal: ${id} by ${proposer}`);
@@ -60,65 +67,136 @@ governanceContract.on("Voted", (id, voter, support, weight) => {
     console.log(`New Vote on Proposal ${id}: ${support ? 'FOR' : 'AGAINST'} by ${voter}`);
     io.emit("newVote", {
         proposalId: id.toString(),
-        voter: `${voter.substring(0, 6)}...${voter.substring(38)}`, // Masked for privacy
+        voter: `${voter.substring(0, 6)}...${voter.substring(38)}`,
         support: support,
         weight: weight.toString(),
         timestamp: new Date().toISOString()
     });
 });
 
-// --- REST Endpoints ---
+// ── REST Endpoints ──────────────────────────────────────
 
-// 1. Send OTP Endpoint
+// 1. Send OTP — accepts employeeId, looks up phone from database
 app.post('/send-otp', async (req, res) => {
-    const { phoneNumber } = req.body;
+    const { employeeId } = req.body;
+
+    if (!employeeId) {
+        return res.status(400).json({ success: false, message: 'Employee ID is required' });
+    }
+
+    const employee = findEmployee(employeeId);
+    if (!employee) {
+        return res.status(404).json({ success: false, message: 'Employee not found in database' });
+    }
+
     try {
         const verification = await twilioClient.verify.v2.services(verifyServiceSid)
             .verifications
-            .create({ to: phoneNumber, channel: 'sms' });
+            .create({ to: employee.phone, channel: 'sms' });
 
-        res.status(200).json({ success: true, message: 'OTP sent successfully', status: verification.status });
+        // Return masked phone for UI display (don't reveal full number)
+        const maskedPhone = employee.phone.replace(/(\+\d{2})\d{6}(\d{4})/, '$1******$2');
+
+        res.status(200).json({
+            success: true,
+            message: `OTP sent to ${maskedPhone}`,
+            status: verification.status,
+            employeeName: employee.name,
+            maskedPhone: maskedPhone
+        });
     } catch (error) {
         console.error('Error sending OTP:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// 2. Verify OTP & Authorize Voter Endpoint
+// 2. Verify OTP & Authorize Voter — uses employeeId to look up phone
 app.post('/verify-otp', async (req, res) => {
-    const { phoneNumber, code, aadhaarId, walletAddress } = req.body;
+    const { employeeId, code, walletAddress } = req.body;
+
+    if (!employeeId || !code || !walletAddress) {
+        return res.status(400).json({ success: false, message: 'employeeId, code, and walletAddress are required' });
+    }
+
+    const employee = findEmployee(employeeId);
+    if (!employee) {
+        return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    // Sybil check: prevent double-registration
+    if (verifiedEmployees[employeeId] && verifiedEmployees[employeeId] !== walletAddress) {
+        return res.status(400).json({
+            success: false,
+            message: 'This Employee ID is already linked to another wallet.'
+        });
+    }
 
     try {
         const verificationCheck = await twilioClient.verify.v2.services(verifyServiceSid)
             .verificationChecks
-            .create({ to: phoneNumber, code: code });
+            .create({ to: employee.phone, code: code });
 
         if (verificationCheck.status !== 'approved') {
             return res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
 
-        if (aadhaarToAddress[aadhaarId] && aadhaarToAddress[aadhaarId] !== walletAddress) {
-            return res.status(400).json({ success: false, message: 'This Aadhaar ID is already linked to another wallet.' });
-        }
-
-        if (addressToAadhaar[walletAddress] && addressToAadhaar[walletAddress] !== aadhaarId) {
-            return res.status(400).json({ success: false, message: 'This wallet is already linked to another Aadhaar.' });
-        }
-
+        // On-chain authorization
         const tx = await governanceContract.verifyVoter(walletAddress);
         await tx.wait();
 
-        aadhaarToAddress[aadhaarId] = walletAddress;
-        addressToAadhaar[walletAddress] = aadhaarId;
+        verifiedEmployees[employeeId] = walletAddress;
 
-        res.status(200).json({ success: true, message: 'Voter verified and authorized on-chain', transactionHash: tx.hash });
+        res.status(200).json({
+            success: true,
+            message: 'Voter verified and authorized on-chain',
+            transactionHash: tx.hash,
+            employeeName: employee.name
+        });
     } catch (error) {
         console.error('Error in verification flow:', error);
         res.status(500).json({ success: false, message: error.message });
     }
 });
 
-// 3. GET Live Results Snapshot
+// 3. Verify Biometric (placeholder for face verification)
+app.post('/verify-biometric', async (req, res) => {
+    const { employeeId, walletAddress } = req.body;
+
+    if (!employeeId || !walletAddress) {
+        return res.status(400).json({ success: false, message: 'employeeId and walletAddress are required' });
+    }
+
+    const employee = findEmployee(employeeId);
+    if (!employee) {
+        return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+
+    // TODO: Replace with actual face-api.js descriptor comparison
+    res.status(200).json({
+        success: true,
+        message: 'Biometric verified',
+        employeeName: employee.name
+    });
+});
+
+// 4. GET Employee lookup (for frontend to check if ID exists)
+app.get('/employee/:id', (req, res) => {
+    const employee = findEmployee(req.params.id);
+    if (!employee) {
+        return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    res.status(200).json({
+        success: true,
+        data: {
+            employeeId: employee.employeeId,
+            name: employee.name,
+            hasWallet: !!employee.wallet,
+            hasFaceData: employee.faceDescriptor !== null
+        }
+    });
+});
+
+// 5. GET Live Results Snapshot
 app.get('/results/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -151,4 +229,5 @@ app.get('/results/:id', async (req, res) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Oracle & Streaming server running on port ${PORT}`);
+    console.log(`Loaded ${employees.length} employees from mock database`);
 });
