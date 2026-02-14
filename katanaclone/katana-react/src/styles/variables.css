@@ -1,0 +1,42 @@
+/* ============================================
+   KATANA NETWORK - DESIGN TOKENS
+   ============================================ */
+
+:root {
+    /* Colors */
+    --color-dark: #11162f;
+    --color-dark-blue: #1443ac;
+    --color-blue: #419de7;
+    --color-light-blue: #cbe9fa;
+    --color-yellow: #f6ff0d;
+    --color-white: #fcfcfc;
+    --color-red: #f62604;
+    --color-orange: #f9a67b;
+    --color-lavender: #c9c5e6;
+    --color-mid-blue: #4887c7;
+    --color-navy: #1f273c;
+    --color-deep-blue: #364695;
+    --color-green-accent: #419d37;
+
+    /* Typography */
+    --font-primary: 'Nikkey Line', sans-serif;
+    --font-body: 'OTJubilee Diamond', sans-serif;
+
+    /* Spacing */
+    --spacing-xs: 8px;
+    --spacing-sm: 16px;
+    --spacing-md: 24px;
+    --spacing-lg: 40px;
+    --spacing-xl: 64px;
+    --spacing-2xl: 96px;
+    --spacing-3xl: 128px;
+
+    /* Layout */
+    --max-width: 1440px;
+    --header-height: 64px;
+
+    /* Transitions */
+    --transition-fast: 0.2s ease;
+    --transition-medium: 0.4s ease;
+    --transition-slow: 0.8s ease;
+}
