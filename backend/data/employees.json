@@ -3,7 +3,7 @@
         "employeeId": "MNC-ADMIN",
         "name": "Demo Administrator",
         "phone": "+919999999999",
-        "wallet": "REPLACE_WITH_YOUR_WALLET_ADDRESS",
+        "wallet": null,
         "faceDescriptor": null
     },
     {

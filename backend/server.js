@@ -6,6 +6,8 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const { ethers } = require('ethers');
+const fs = require('fs');
+const path = require('path');
 
 // ── Mock Employee Database ──────────────────────────────
 const employees = require('./data/employees.json');
@@ -124,10 +126,25 @@ app.post('/verify-otp', async (req, res) => {
     }
 
     // Sybil check: prevent double-registration
-    if (verifiedEmployees[employeeId] && verifiedEmployees[employeeId] !== walletAddress) {
-        return res.status(400).json({
+    // Dynamic Wallet Binding & Sybil Protection
+    if (!employee.wallet) {
+        // First-time bind
+        employee.wallet = walletAddress;
+        console.log(`[Auto-Bind] Linked wallet ${walletAddress} to employee ${employeeId}`);
+
+        // Persist to JSON file
+        try {
+            const filePath = path.join(__dirname, 'data', 'employees.json');
+            fs.writeFileSync(filePath, JSON.stringify(employees, null, 4));
+            console.log("[Auto-Bind] Persisted to employees.json");
+        } catch (err) {
+            console.error("[Auto-Bind] Failed to save database:", err);
+        }
+    } else if (employee.wallet.toLowerCase() !== walletAddress.toLowerCase()) {
+        // Mismatch - Block request
+        return res.status(403).json({
             success: false,
-            message: 'This Employee ID is already linked to another wallet.'
+            message: `Sybil Protection: This ID is bound to another wallet (${employee.wallet.substring(0, 6)}...)`
         });
     }
 
