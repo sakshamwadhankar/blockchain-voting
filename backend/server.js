@@ -230,4 +230,11 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Oracle & Streaming server running on port ${PORT}`);
     console.log(`Loaded ${employees.length} employees from mock database`);
+
+    // Environment Check
+    if (!process.env.RPC_URL || !process.env.ADMIN_PRIVATE_KEY || !process.env.GOVERNANCE_CONTRACT_ADDRESS) {
+        console.error("❌ MISSING ENV VARIABLES: Check RPC_URL, ADMIN_PRIVATE_KEY, and GOVERNANCE_CONTRACT_ADDRESS");
+    } else {
+        console.log("✅ Blockchain configuration loaded");
+    }
 });
