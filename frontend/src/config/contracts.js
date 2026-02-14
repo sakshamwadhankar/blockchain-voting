@@ -4,7 +4,7 @@ export const GOVERNANCE_ADDRESS = "0x0000000000000000000000000000000000000000"; 
 export const VAULT_ADDRESS = "0x0000000000000000000000000000000000000000";
 export const TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-export const BACKEND_URL = "http://localhost:5000";
+export const BACKEND_URL = "/api";
 
 export const GOVERNANCE_ABI = [
     "function propose(string description, address recipient, uint256 amount) external returns (uint256)",

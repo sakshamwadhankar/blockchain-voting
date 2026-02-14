@@ -1,5 +1,12 @@
 [
     {
+        "employeeId": "MNC-ADMIN",
+        "name": "Demo Administrator",
+        "phone": "+919999999999",
+        "wallet": "REPLACE_WITH_YOUR_WALLET_ADDRESS",
+        "faceDescriptor": null
+    },
+    {
         "employeeId": "MNC-001",
         "name": "Saksham Wadhankar",
         "phone": "+919876543210",
