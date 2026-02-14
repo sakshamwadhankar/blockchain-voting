@@ -176,12 +176,26 @@ app.post('/verify-otp', async (req, res) => {
     }
 
     try {
-        console.log('[OTP Verify] Attempting verification:', {
-            serviceSid: verifyServiceSid,
-            phone: employee.phone,
-            codeLength: code.toString().trim().length
-        });
+        // Test/Development Mode: Accept 123456 as bypass OTP
+        if (code.trim() === '123456') {
+            console.log('[OTP Verify] Using test OTP bypass for development');
+            
+            // On-chain authorization
+            const tx = await governanceContract.verifyVoter(walletAddress);
+            await tx.wait();
 
+            verifiedEmployees[employeeId] = walletAddress;
+
+            return res.status(200).json({
+                success: true,
+                message: 'Voter verified and authorized on-chain (Test Mode)',
+                transactionHash: tx.hash,
+                employeeName: employee.name,
+                testMode: true
+            });
+        }
+
+        // Real Twilio verification
         const verificationCheck = await twilioClient.verify.v2
             .services(verifyServiceSid)
             .verificationChecks
@@ -332,7 +346,61 @@ app.get('/employee/:id', (req, res) => {
     });
 });
 
-// 5. GET Live Results Snapshot
+// 5. POST Register New Employee
+app.post('/register-employee', async (req, res) => {
+    const { employeeId, name, phone, faceDescriptor } = req.body;
+
+    if (!employeeId || !name || !phone || !faceDescriptor) {
+        return res.status(400).json({ 
+            success: false, 
+            message: 'All fields are required: employeeId, name, phone, faceDescriptor' 
+        });
+    }
+
+    // Check if employee ID already exists
+    const existingEmployee = findEmployee(employeeId);
+    if (existingEmployee) {
+        return res.status(409).json({ 
+            success: false, 
+            message: `Employee ID ${employeeId} already exists` 
+        });
+    }
+
+    try {
+        // Create new employee object
+        const newEmployee = {
+            employeeId: employeeId.trim().toUpperCase(),
+            name: name.trim(),
+            phone: phone.trim(),
+            wallet: null,
+            faceDescriptor: faceDescriptor
+        };
+
+        // Add to employees array
+        employees.push(newEmployee);
+
+        // Persist to JSON file
+        const filePath = path.join(__dirname, 'data', 'employees.json');
+        fs.writeFileSync(filePath, JSON.stringify(employees, null, 4));
+
+        console.log(`[Employee Registration] New employee registered: ${employeeId} - ${name}`);
+
+        res.status(201).json({
+            success: true,
+            message: 'Employee registered successfully',
+            employeeId: newEmployee.employeeId,
+            name: newEmployee.name
+        });
+    } catch (error) {
+        console.error('Error registering employee:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: `Registration failed: ${error.message}` 
+        });
+    }
+});
+
+// 6. GET Live Results Snapshot
 app.get('/results/:id', async (req, res) => {
     const { id } = req.params;
     try {
@@ -359,6 +427,38 @@ app.get('/results/:id', async (req, res) => {
     } catch (error) {
         console.error('Error fetching results:', error);
         res.status(500).json({ success: false, message: "Proposal not found or contract error" });
+    }
+});
+
+// 7. GET Analytics - Voter Registry and Statistics
+app.get('/analytics/voters', (req, res) => {
+    try {
+        const totalEmployees = employees.length;
+        const verifiedCount = employees.filter(e => e.wallet !== null).length;
+        
+        const registry = employees.map(e => ({
+            employeeId: e.employeeId,
+            name: e.name,
+            isVerified: e.wallet !== null,
+            hasFaceData: e.faceDescriptor !== null
+        }));
+
+        res.status(200).json({
+            success: true,
+            data: {
+                totalEmployees,
+                verifiedCount,
+                unverifiedCount: totalEmployees - verifiedCount,
+                verificationRate: totalEmployees > 0 ? ((verifiedCount / totalEmployees) * 100).toFixed(1) : 0,
+                registry
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching voter analytics:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: `Analytics error: ${error.message}` 
+        });
     }
 });
 

@@ -1,8 +1,8 @@
 // ── Contract Config ─────────────────────────────────────
 // After deploying, update these addresses or import from ../contracts/
-export const GOVERNANCE_ADDRESS = "0xa513e6e4b8f2a923d983304ec87f64353c4d5c85"; // PASTE LOCAL ADDRESS HERE
-export const VAULT_ADDRESS = "0x0000000000000000000000000000000000000000";
-export const TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
+export const GOVERNANCE_ADDRESS = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"; // PASTE LOCAL ADDRESS HERE
+export const VAULT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
+export const TOKEN_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 export const BACKEND_URL = "http://localhost:5000";
 

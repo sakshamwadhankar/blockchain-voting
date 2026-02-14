@@ -8,6 +8,7 @@ import VerifyIdentity from "./pages/VerifyIdentity";
 import VotingBooth from "./pages/VotingBooth";
 import LiveResults from "./pages/LiveResults";
 import AdminPanel from "./pages/AdminPanel";
+import RegisterEmployee from "./pages/RegisterEmployee";
 import "./index.css";
 
 const navItems = [
@@ -120,6 +121,14 @@ function Layout() {
             element={
               <ProtectedRoute adminOnly={true}>
                 <AdminPanel />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/register-employee"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <RegisterEmployee />
               </ProtectedRoute>
             }
           />

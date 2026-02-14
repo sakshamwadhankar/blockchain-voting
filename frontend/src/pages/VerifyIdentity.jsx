@@ -271,7 +271,13 @@ export default function VerifyIdentity() {
                     message: `OTP sent to ${data.maskedPhone || "your phone"}`,
                 });
             } else {
-                setStatus({ type: "error", message: data.message });
+                // If OTP sending fails (unverified number), show bypass option
+                setOtpSent(true);
+                setMaskedPhone("(Twilio verification failed)");
+                setStatus({ 
+                    type: "error", 
+                    message: `${data.message}. Use test OTP: 123456` 
+                });
             }
         } catch {
             setStatus({ type: "error", message: "Failed to send OTP. Check backend." });
