@@ -1,10 +1,10 @@
 // ── Contract Config ─────────────────────────────────────
 // After deploying, update these addresses or import from ../contracts/
-export const GOVERNANCE_ADDRESS = "0x0000000000000000000000000000000000000000"; // Replace after deploy
+export const GOVERNANCE_ADDRESS = "0xa513E6E4b8f2a923D983304ec87F64353C4D5C85"; // PASTE LOCAL ADDRESS HERE
 export const VAULT_ADDRESS = "0x0000000000000000000000000000000000000000";
 export const TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-export const BACKEND_URL = "/api";
+export const BACKEND_URL = "http://localhost:5000";
 
 export const GOVERNANCE_ABI = [
     "function propose(string description, address recipient, uint256 amount) external returns (uint256)",

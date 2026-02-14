@@ -2,15 +2,15 @@
     {
         "employeeId": "MNC-ADMIN",
         "name": "Demo Administrator",
-        "phone": "+919999999999",
-        "wallet": null,
+        "phone": "+917507633352",
+        "wallet": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
         "faceDescriptor": null
     },
     {
         "employeeId": "MNC-001",
         "name": "Saksham Wadhankar",
-        "phone": "+919876543210",
-        "wallet": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "phone": "+917507633352",
+        "wallet": null,
         "faceDescriptor": null
     },
     {

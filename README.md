@@ -1,87 +1,287 @@
-# Blockchain Hackathon Template
+# 🗳️ Blockchain Governance & Voting System
 
-A production-ready, multi-chain smart contract template for blockchain hackathons. Comes with battle-tested token contracts (ERC20, ERC721, ERC1155) and core business logic (Marketplace, Staking, Governance, Escrow, Vault) — all built on OpenZeppelin 5.x.
+A secure, decentralized voting platform with AI-powered biometric verification, built on Ethereum blockchain.
 
-## 📦 Contracts
+## ✨ Features
 
-| Contract | Path | Use Case |
-|----------|------|----------|
-| **MyERC20** | `contracts/tokens/MyERC20.sol` | Fungible token with burn, pause, permit, optional supply cap |
-| **MyERC721** | `contracts/tokens/MyERC721.sol` | NFT with enumerable, URI storage, public & batch minting |
-| **MyERC1155** | `contracts/tokens/MyERC1155.sol` | Multi-token with per-token pricing and supply caps |
-| **Marketplace** | `contracts/core/Marketplace.sol` | NFT marketplace — list, buy, cancel, platform fee |
-| **Staking** | `contracts/core/Staking.sol` | Synthetix-style ERC20 staking with reward distribution |
-| **Governance** | `contracts/core/Governance.sol` | Lightweight DAO — propose, token-weighted vote, execute |
-| **Escrow** | `contracts/core/Escrow.sol` | P2P escrow for ETH + ERC20, arbiter dispute resolution |
-| **Vault** | `contracts/core/Vault.sol` | Multi-asset custody vault with per-user accounting |
+### 🔐 Multi-Layer Security
+- **Blockchain-based voting** - Immutable and transparent
+- **AI Face Recognition** - True biometric verification with database comparison
+- **OTP Verification** - SMS-based two-factor authentication via Twilio
+- **Wallet Authentication** - MetaMask integration
+- **Sybil Protection** - One employee, one wallet binding
 
-## 🚀 Quick Start
+### 👤 Authentication System
+- **Employee Login** - ID verification with face scan and OTP
+- **Admin Panel** - Password-protected governance management
+- **Protected Routes** - Role-based access control
+- **Session Management** - Persistent login with localStorage
 
+### 🧠 AI-Powered Biometrics
+- **Face Detection** - Real-time face detection using face-api.js
+- **Face Recognition** - 128-dimensional descriptor comparison
+- **Registration Mode** - First-time face enrollment
+- **Verification Mode** - Match against stored biometric data
+- **Euclidean Distance** - Threshold-based matching (< 0.5)
+
+### 📊 Governance Features
+- **Proposal Creation** - Create governance proposals
+- **Voting System** - Cast votes (For/Against)
+- **Live Results** - Real-time vote tracking via WebSocket
+- **Proposal Execution** - On-chain execution after voting period
+
+## 🏗️ Tech Stack
+
+### Frontend
+- **React** - UI framework
+- **Vite** - Build tool
+- **React Router** - Navigation
+- **face-api.js** - Face recognition
+- **Tesseract.js** - OCR for ID scanning
+- **ethers.js** - Blockchain interaction
+- **Socket.io Client** - Real-time updates
+
+### Backend
+- **Node.js + Express** - API server
+- **Twilio Verify** - OTP service
+- **Socket.io** - WebSocket server
+- **ethers.js** - Blockchain oracle
+
+### Blockchain
+- **Hardhat** - Development environment
+- **Solidity** - Smart contracts
+- **OpenZeppelin** - Security standards
+
+## 📦 Installation
+
+### Prerequisites
+- Node.js v18+
+- MetaMask browser extension
+- Twilio account (for OTP)
+
+### 1. Clone Repository
 ```bash
-# 1. Install dependencies
+git clone <your-repo-url>
+cd blockchain-voting
+```
+
+### 2. Install Dependencies
+```bash
+# Root dependencies
 npm install
 
-# 2. Set up environment
-cp .env.example .env
-# Edit .env with your private key and RPC URLs
+# Frontend dependencies
+cd frontend
+npm install
 
-# 3. Compile contracts
-npm run compile
-
-# 4. Run tests
-npm run test
-
-# 5. Edit deploy.ts — toggle which contracts to deploy
-#    Open scripts/deploy.ts and set DEPLOY flags to true/false
-
-# 6. Deploy to testnet
-npm run deploy:sepolia
+# Backend dependencies
+cd ../backend
+npm install
 ```
 
-## 🌐 Supported Chains
-
-| Chain | Deploy Command | Explorer |
-|-------|---------------|----------|
-| Ethereum Sepolia | `npm run deploy:sepolia` | etherscan.io |
-| Polygon Amoy | `npm run deploy:amoy` | polygonscan.com |
-| Arbitrum Sepolia | `npm run deploy:arbitrumSepolia` | arbiscan.io |
-| Base Sepolia | `npm run deploy:baseSepolia` | basescan.org |
-| Optimism Sepolia | `npm run deploy:optimismSepolia` | optimistic.etherscan.io |
-| BSC Testnet | `npm run deploy:bscTestnet` | bscscan.com |
-| Avalanche Fuji | `npm run deploy:fuji` | snowtrace.io |
-| Scroll Sepolia | `npm run deploy:scrollSepolia` | scrollscan.com |
-| Local Hardhat | `npm run deploy:local` | — |
-
-## 🏆 Hackathon Day Workflow
-
-1. **Clone** this repo
-2. **Toggle** contracts in `scripts/deploy.ts` — enable only what you need
-3. **Customize** constructor params (token names, supply caps, fees, etc.)
-4. **Deploy** to your target testnet
-5. **Build frontend** using the ABIs
-
-## 📁 Where to Find ABIs
-
-After compiling, ABIs are located at:
-
-```
-artifacts/contracts/<ContractFolder>/<ContractName>.sol/<ContractName>.json
+### 3. Download AI Models
+```bash
+cd frontend
+node scripts/download-models.cjs
 ```
 
-For example:
-- `artifacts/contracts/tokens/MyERC20.sol/MyERC20.json`
-- `artifacts/contracts/core/Marketplace.sol/Marketplace.json`
+This downloads face-api.js models to `frontend/public/models/`:
+- SSD MobileNet V1 (face detection)
+- Face Landmark 68 (facial landmarks)
+- Face Recognition Model (ResNet-34)
 
-## 🛠 Scripts
+### 4. Configure Environment Variables
 
-| Command | Description |
-|---------|-------------|
-| `npm run compile` | Compile all Solidity contracts |
-| `npm run test` | Run the full test suite |
-| `npm run test:gas` | Run tests with gas reporting |
-| `npm run node` | Start a local Hardhat node |
-| `npm run clean` | Clean build artifacts |
+**Backend `.env`:**
+```env
+PORT=5000
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_VERIFY_SERVICE_SID=your_verify_service_sid
+RPC_URL=http://127.0.0.1:8545
+ADMIN_PRIVATE_KEY=your_admin_private_key
+GOVERNANCE_CONTRACT_ADDRESS=your_contract_address
+```
 
-## License
+**Root `.env`:**
+```env
+PRIVATE_KEY=your_deployment_private_key
+```
 
-MIT
+### 5. Deploy Smart Contracts
+```bash
+# Start local blockchain
+npx hardhat node
+
+# In another terminal, deploy contracts
+npx hardhat run scripts/deploy.js --network localhost
+```
+
+Copy the deployed contract address to `backend/.env` and `frontend/src/config/contracts.js`.
+
+## 🚀 Running the Application
+
+### Start Backend
+```bash
+cd backend
+npm start
+```
+Server runs on `http://localhost:5000`
+
+### Start Frontend
+```bash
+cd frontend
+npm run dev
+```
+App runs on `http://localhost:5173`
+
+### Start Blockchain (if not running)
+```bash
+npx hardhat node
+```
+
+## 📱 Usage
+
+### Employee Workflow
+1. **Login** - Click "Continue as Employee"
+2. **Verify Identity**:
+   - Scan or manually enter Employee ID
+   - Face scan (auto-registers first time, verifies thereafter)
+   - Enter OTP sent to registered phone
+3. **Vote** - Access voting booth after verification
+4. **View Results** - See live voting results
+
+### Admin Workflow
+1. **Login** - Enter admin password (default: `admin123`)
+2. **Create Proposals** - Add new governance proposals
+3. **Manage System** - Monitor votes and execute proposals
+
+## 🔑 Default Credentials
+
+### Admin
+- Password: `admin123`
+
+### Test Employees
+- **MNC-ADMIN** - Demo Administrator
+- **MNC-001** - Saksham Wadhankar
+- **MNC-002** - Aarav Sharma
+- **MNC-003** - Priya Patel
+
+(See `backend/data/employees.json` for full list)
+
+## 🏛️ Architecture
+
+### Smart Contract Flow
+```
+Employee → Verify Identity → Authorized Voter
+         ↓
+    Cast Vote → Proposal
+         ↓
+    Vote Counted → Results
+         ↓
+    Proposal Executed (if passed)
+```
+
+### Face Recognition Flow
+```
+Capture Face → Extract Descriptor (128 numbers)
+              ↓
+         First Time?
+         ↓         ↓
+       Yes        No
+         ↓         ↓
+    Register   Compare with DB
+         ↓         ↓
+    Save to    Calculate Distance
+    Database      ↓
+              < 0.5? → Match ✅
+              > 0.5? → Reject ❌
+```
+
+## 🔒 Security Features
+
+1. **Blockchain Immutability** - Votes cannot be altered
+2. **Biometric Verification** - Face recognition with database comparison
+3. **OTP Authentication** - SMS-based verification
+4. **Wallet Binding** - One employee = one wallet
+5. **Role-Based Access** - Admin vs Employee permissions
+6. **Protected Routes** - Authentication required for all pages
+
+## 📁 Project Structure
+
+```
+blockchain-voting/
+├── contracts/              # Solidity smart contracts
+├── scripts/               # Deployment scripts
+├── test/                  # Contract tests
+├── backend/
+│   ├── data/             # Employee database
+│   └── server.js         # Express API + Socket.io
+├── frontend/
+│   ├── public/
+│   │   └── models/       # face-api.js models
+│   ├── src/
+│   │   ├── components/   # React components
+│   │   ├── context/      # Auth & Wallet context
+│   │   ├── pages/        # Main pages
+│   │   └── config/       # Configuration
+│   └── scripts/          # Model downloader
+└── hardhat.config.ts     # Hardhat configuration
+```
+
+## 🛠️ Development
+
+### Run Tests
+```bash
+npx hardhat test
+```
+
+### Compile Contracts
+```bash
+npx hardhat compile
+```
+
+### Deploy to Network
+```bash
+npx hardhat run scripts/deploy.js --network <network-name>
+```
+
+## 📝 API Endpoints
+
+### Backend API
+- `GET /employee/:id` - Get employee details
+- `POST /send-otp` - Send OTP to employee phone
+- `POST /verify-otp` - Verify OTP and authorize wallet
+- `POST /verify-biometric` - Face recognition verification
+- `GET /results/:id` - Get proposal results
+
+### WebSocket Events
+- `newProposal` - New proposal created
+- `newVote` - Vote cast on proposal
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License.
+
+## 🙏 Acknowledgments
+
+- [face-api.js](https://github.com/justadudewhohacks/face-api.js) - Face recognition
+- [OpenZeppelin](https://openzeppelin.com/) - Smart contract security
+- [Hardhat](https://hardhat.org/) - Ethereum development
+- [Twilio](https://www.twilio.com/) - SMS verification
+
+## 📧 Support
+
+For issues and questions, please open an issue on GitHub.
+
+---
+
+Built with ❤️ using React, Ethereum, and AI

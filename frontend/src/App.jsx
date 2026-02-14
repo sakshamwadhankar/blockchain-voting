@@ -1,6 +1,9 @@
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
+import { BrowserRouter, Routes, Route, NavLink, useNavigate } from "react-router-dom";
 import { WalletProvider, useWallet } from "./context/WalletContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import WalletConnect from "./components/WalletConnect";
+import ProtectedRoute from "./components/ProtectedRoute";
+import Login from "./pages/Login";
 import VerifyIdentity from "./pages/VerifyIdentity";
 import VotingBooth from "./pages/VotingBooth";
 import LiveResults from "./pages/LiveResults";
@@ -8,14 +11,21 @@ import AdminPanel from "./pages/AdminPanel";
 import "./index.css";
 
 const navItems = [
-  { path: "/", label: "Verify ID", icon: "🪪" },
-  { path: "/vote", label: "Vote", icon: "🗳️" },
-  { path: "/results", label: "Results", icon: "📊" },
-  { path: "/admin", label: "Admin", icon: "⚙️" },
+  { path: "/", label: "Verify ID", icon: "🪪", adminOnly: false },
+  { path: "/vote", label: "Vote", icon: "🗳️", adminOnly: false },
+  { path: "/results", label: "Results", icon: "📊", adminOnly: false },
+  { path: "/admin", label: "Admin", icon: "⚙️", adminOnly: true },
 ];
 
 function Layout() {
   const { account } = useWallet();
+  const { user, logout, isAdmin } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -30,38 +40,89 @@ function Layout() {
             <span className="text-lg font-bold text-white hidden sm:inline">
               Governance
             </span>
+            {user && (
+              <span className="text-xs text-slate-400 hidden md:inline">
+                · {user.type === "admin" ? "Admin" : user.name}
+              </span>
+            )}
           </div>
 
           <nav className="flex items-center gap-1">
-            {navItems.map(({ path, label, icon }) => (
-              <NavLink
-                key={path}
-                to={path}
-                className={({ isActive }) =>
-                  `flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
-                   transition-all duration-200
-                   ${isActive
-                    ? "bg-indigo-500/20 text-indigo-300 shadow-sm"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/40"}`
-                }
-              >
-                <span className="hidden md:inline">{icon}</span>
-                <span>{label}</span>
-              </NavLink>
-            ))}
+            {navItems.map(({ path, label, icon, adminOnly }) => {
+              // Hide admin link for non-admin users
+              if (adminOnly && !isAdmin()) return null;
+              
+              return (
+                <NavLink
+                  key={path}
+                  to={path}
+                  className={({ isActive }) =>
+                    `flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium
+                     transition-all duration-200
+                     ${isActive
+                      ? "bg-indigo-500/20 text-indigo-300 shadow-sm"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-700/40"}`
+                  }
+                >
+                  <span className="hidden md:inline">{icon}</span>
+                  <span>{label}</span>
+                </NavLink>
+              );
+            })}
           </nav>
 
-          <WalletConnect />
+          <div className="flex items-center gap-2">
+            <WalletConnect />
+            {user && (
+              <button
+                onClick={handleLogout}
+                className="px-3 py-2 rounded-lg text-sm font-medium text-slate-400 
+                         hover:text-slate-200 hover:bg-slate-700/40 transition-all cursor-pointer"
+                title="Logout"
+              >
+                🚪
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
       {/* ── Main Content ─────────────────────────── */}
       <main className="flex-1">
         <Routes>
-          <Route path="/" element={<VerifyIdentity />} />
-          <Route path="/vote" element={<VotingBooth />} />
-          <Route path="/results" element={<LiveResults />} />
-          <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute allowGuest={true}>
+                <VerifyIdentity />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/vote"
+            element={
+              <ProtectedRoute requireVerification={true}>
+                <VotingBooth />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/results"
+            element={
+              <ProtectedRoute>
+                <LiveResults />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute adminOnly={true}>
+                <AdminPanel />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </main>
 
@@ -75,10 +136,12 @@ function Layout() {
 
 export default function App() {
   return (
-    <WalletProvider>
-      <BrowserRouter>
-        <Layout />
-      </BrowserRouter>
-    </WalletProvider>
+    <AuthProvider>
+      <WalletProvider>
+        <BrowserRouter>
+          <Layout />
+        </BrowserRouter>
+      </WalletProvider>
+    </AuthProvider>
   );
 }
