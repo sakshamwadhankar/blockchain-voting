@@ -30,10 +30,12 @@ const governanceAddress = process.env.GOVERNANCE_CONTRACT_ADDRESS;
 
 const governanceAbi = [
     "function verifyVoter(address _voter) external",
-    "function getProposal(uint256 id) external view returns (address proposer, string memory description, uint256 forVotes, uint256 againstVotes, uint256 startTime, uint256 endTime, bool executed, bool cancelled)",
+    "function execute(uint256 id) external",
+    "function getProposal(uint256 id) external view returns (address proposer, string description, address recipient, uint256 amount, uint256 forVotes, uint256 againstVotes, uint256 startTime, uint256 endTime, bool executed, bool cancelled)",
     "function state(uint256 id) public view returns (uint8)",
     "event Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight)",
-    "event ProposalCreated(uint256 indexed id, address indexed proposer, string description)"
+    "event ProposalCreated(uint256 indexed id, address indexed proposer, string description, address recipient, uint256 amount)",
+    "event ProposalExecuted(uint256 indexed id)"
 ];
 
 const governanceContract = new ethers.Contract(governanceAddress, governanceAbi, wallet);

@@ -4,6 +4,10 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IVault {
+    function releaseETH(address payable recipient, uint256 amount) external;
+}
+
 contract Governance is Ownable {
     IERC20 public immutable governanceToken;
     uint256 public votingPeriod;
@@ -11,6 +15,7 @@ contract Governance is Ownable {
     uint256 public proposalThreshold;
     uint256 public nextProposalId;
 
+    address public vault;
     mapping(address => bool) public isVerified;
 
     enum ProposalState { Pending, Active, Succeeded, Defeated, Executed, Cancelled }
@@ -18,6 +23,8 @@ contract Governance is Ownable {
     struct Proposal {
         address proposer;
         string description;
+        address payable recipient;
+        uint256 amount;
         uint256 forVotes;
         uint256 againstVotes;
         uint256 startTime;
@@ -29,11 +36,12 @@ contract Governance is Ownable {
 
     mapping(uint256 => Proposal) public proposals;
 
-    event ProposalCreated(uint256 indexed id, address indexed proposer, string description);
+    event ProposalCreated(uint256 indexed id, address indexed proposer, string description, address recipient, uint256 amount);
     event Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight);
     event ProposalExecuted(uint256 indexed id);
     event ProposalCancelled(uint256 indexed id);
     event VoterVerified(address indexed voter);
+    event VaultSet(address indexed vault);
 
     constructor(address _token, uint256 _votingPeriod, uint256 _quorumPercent, uint256 _threshold, address _owner) Ownable(_owner) {
         governanceToken = IERC20(_token);
@@ -42,16 +50,24 @@ contract Governance is Ownable {
         proposalThreshold = _threshold;
     }
 
-    function propose(string calldata description) external returns (uint256) {
+    function setVault(address _vault) external onlyOwner {
+        require(_vault != address(0), "Governance: zero address");
+        vault = _vault;
+        emit VaultSet(_vault);
+    }
+
+    function propose(string calldata description, address payable recipient, uint256 amount) external returns (uint256) {
         require(governanceToken.balanceOf(msg.sender) >= proposalThreshold, "Governance: below proposal threshold");
         uint256 id = nextProposalId;
         nextProposalId++;
         Proposal storage p = proposals[id];
         p.proposer = msg.sender;
         p.description = description;
+        p.recipient = recipient;
+        p.amount = amount;
         p.startTime = block.timestamp;
         p.endTime = block.timestamp + votingPeriod;
-        emit ProposalCreated(id, msg.sender, description);
+        emit ProposalCreated(id, msg.sender, description, recipient, amount);
         return id;
     }
 
@@ -69,7 +85,14 @@ contract Governance is Ownable {
 
     function execute(uint256 id) external onlyOwner {
         require(state(id) == ProposalState.Succeeded, "Governance: proposal not succeeded");
-        proposals[id].executed = true;
+        Proposal storage p = proposals[id];
+        p.executed = true;
+
+        // Trigger Vault action if amount > 0
+        if (p.amount > 0 && vault != address(0)) {
+            IVault(vault).releaseETH(p.recipient, p.amount);
+        }
+
         emit ProposalExecuted(id);
     }
 
@@ -105,11 +128,12 @@ contract Governance is Ownable {
     }
 
     function getProposal(uint256 id) external view returns (
-        address proposer, string memory description, uint256 forVotes, uint256 againstVotes,
+        address proposer, string memory description, address recipient, uint256 amount,
+        uint256 forVotes, uint256 againstVotes,
         uint256 startTime, uint256 endTime, bool executed, bool cancelled
     ) {
         Proposal storage p = proposals[id];
-        return (p.proposer, p.description, p.forVotes, p.againstVotes, p.startTime, p.endTime, p.executed, p.cancelled);
+        return (p.proposer, p.description, p.recipient, p.amount, p.forVotes, p.againstVotes, p.startTime, p.endTime, p.executed, p.cancelled);
     }
 
     function hasVoted(uint256 id, address account) external view returns (bool) { return proposals[id].hasVoted[account]; }
