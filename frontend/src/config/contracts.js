@@ -1,6 +1,6 @@
 // ── Contract Config ─────────────────────────────────────
 // After deploying, update these addresses or import from ../contracts/
-export const GOVERNANCE_ADDRESS = "0xa513E6E4b8f2a923D983304ec87F64353C4D5C85"; // PASTE LOCAL ADDRESS HERE
+export const GOVERNANCE_ADDRESS = "0xa513e6e4b8f2a923d983304ec87f64353c4d5c85"; // PASTE LOCAL ADDRESS HERE
 export const VAULT_ADDRESS = "0x0000000000000000000000000000000000000000";
 export const TOKEN_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -17,6 +17,7 @@ export const GOVERNANCE_ABI = [
     "function hasVoted(uint256 id, address account) external view returns (bool)",
     "function nextProposalId() public view returns (uint256)",
     "function governanceToken() public view returns (address)",
+    "function votingPeriod() public view returns (uint256)",
     "event ProposalCreated(uint256 indexed id, address indexed proposer, string description, address recipient, uint256 amount)",
     "event Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight)",
     "event ProposalExecuted(uint256 indexed id)",
