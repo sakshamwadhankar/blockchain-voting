@@ -1,166 +1,169 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { ethers } from 'ethers'
-import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js'
-import { Bar } from 'react-chartjs-2'
-import { io } from 'socket.io-client'
 import { useWallet } from '../context/WalletContext'
-import { STATE_LABELS, BACKEND_URL } from '../config/contracts'
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
+import { Bar } from 'react-chartjs-2'
 import SectionParticles from '../components/SectionParticles'
 import StarField from '../components/StarField'
 
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend)
-
-const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-        legend: { labels: { color: 'rgba(252,252,252,0.6)', font: { size: 11 } } },
-        tooltip: { backgroundColor: 'rgba(17,22,47,0.95)', borderColor: 'rgba(65,157,231,0.3)', borderWidth: 1 },
-    },
-    scales: {
-        x: { ticks: { color: 'rgba(252,252,252,0.5)', font: { size: 10 } }, grid: { color: 'rgba(252,252,252,0.04)' } },
-        y: { ticks: { color: 'rgba(252,252,252,0.5)' }, grid: { color: 'rgba(252,252,252,0.06)' } },
-    },
-}
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 
 export default function ResultsPage() {
-    const { governance, connect, account } = useWallet()
-    const [proposals, setProposals] = useState([])
-    const [auditLog, setAuditLog] = useState([])
+    const { governance } = useWallet()
     const [loading, setLoading] = useState(true)
-    const [liveIndicator, setLiveIndicator] = useState(true)
+    const [proposalId, setProposalId] = useState(null)
+    const [results, setResults] = useState({ for: 0, against: 0 })
+    const [auditLog, setAuditLog] = useState([])
+    const [proposal, setProposal] = useState(null)
 
-    // Blink live dot
     useEffect(() => {
-        const t = setInterval(() => setLiveIndicator((p) => !p), 1000)
-        return () => clearInterval(t)
-    }, [])
-
-    const formatEth = (wei) => {
-        try { return parseFloat(ethers.formatEther(wei)) } catch { return 0 }
-    }
-
-    const fetchResults = useCallback(async () => {
         if (!governance) return
-        setLoading(true)
-        try {
-            const count = await governance.nextProposalId()
-            const items = []
-            for (let i = 0; i < Number(count); i++) {
-                const p = await governance.getProposal(i)
-                const s = await governance.state(i)
-                const forVotes = formatEth(p.forVotes)
-                const againstVotes = formatEth(p.againstVotes)
-                const total = forVotes + againstVotes
-                items.push({
-                    id: i,
-                    description: p.description,
-                    forVotes,
-                    againstVotes,
-                    total,
-                    forPct: total > 0 ? (forVotes / total * 100).toFixed(1) : 0,
-                    againstPct: total > 0 ? (againstVotes / total * 100).toFixed(1) : 0,
-                    endTime: Number(p.endTime),
-                    state: STATE_LABELS[Number(s)] || 'Unknown',
-                    stateIndex: Number(s),
+        let isMounted = true
+
+        const fetchData = async () => {
+            try {
+                const nextId = await governance.nextProposalId()
+                const currentId = Number(nextId) - 1
+                if (currentId < 0) {
+                    setLoading(false)
+                    return
+                }
+                setProposalId(currentId)
+
+                const p = await governance.getProposal(currentId)
+                setProposal(p)
+                setResults({
+                    for: Number(p.forVotes),
+                    against: Number(p.againstVotes),
                 })
+
+                const filter = governance.filters.Voted(currentId)
+                const events = await governance.queryFilter(filter)
+                const formattedLog = await Promise.all(
+                    events.map(async (e) => {
+                        const block = await e.getBlock()
+                        return {
+                            txHash: e.transactionHash,
+                            voter: e.args[1],
+                            support: e.args[2],
+                            weight: e.args[3].toString(),
+                            timestamp: new Date(block.timestamp * 1000).toLocaleTimeString(),
+                        }
+                    })
+                )
+                if (isMounted) {
+                    setAuditLog(formattedLog.reverse())
+                    setLoading(false)
+                }
+            } catch (err) {
+                console.error('Error fetching dashboard data:', err)
+                setLoading(false)
             }
-            setProposals(items.reverse())
-        } catch (err) {
-            console.error('Fetch results:', err)
         }
-        setLoading(false)
-    }, [governance])
 
-    useEffect(() => { fetchResults() }, [fetchResults])
+        fetchData()
 
-    // Listen for live vote events from Socket.IO
-    useEffect(() => {
-        const socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] })
-        socket.on('newVote', (data) => {
-            setAuditLog((prev) => [
-                {
-                    id: Date.now(),
-                    time: new Date().toLocaleTimeString(),
-                    proposalId: data.proposalId,
-                    voter: data.voter,
-                    support: data.support,
-                    weight: data.weight,
-                    txHash: data.txHash,
-                },
-                ...prev,
-            ].slice(0, 50))
-            // Refresh data on new vote
-            fetchResults()
-        })
-        return () => socket.disconnect()
-    }, [fetchResults])
-
-    // Also listen to on-chain events directly
-    useEffect(() => {
-        if (!governance) return
-        const handleVoted = (id, voter, support, weight) => {
-            setAuditLog((prev) => [
-                {
-                    id: Date.now(),
-                    time: new Date().toLocaleTimeString(),
-                    proposalId: Number(id),
-                    voter,
-                    support,
-                    weight: formatEth(weight),
-                    txHash: '',
-                },
-                ...prev,
-            ].slice(0, 50))
+        const handleNewVote = async (id, voter, support, weight, event) => {
+            const votedId = Number(id)
+            if (proposalId !== null && votedId !== proposalId) return
+            setResults((prev) => ({
+                for: support ? prev.for + Number(weight) : prev.for,
+                against: !support ? prev.against + Number(weight) : prev.against,
+            }))
+            const block = await event.getBlock()
+            const newLogItem = {
+                txHash: event.transactionHash,
+                voter: voter,
+                support: support,
+                weight: weight.toString(),
+                timestamp: new Date(block.timestamp * 1000).toLocaleTimeString(),
+                isNew: true,
+            }
+            setAuditLog((prev) => [newLogItem, ...prev])
         }
-        governance.on('Voted', handleVoted)
-        return () => { governance.off('Voted', handleVoted) }
-    }, [governance])
+
+        governance.on('Voted', handleNewVote)
+
+        return () => {
+            isMounted = false
+            governance.off('Voted', handleNewVote)
+        }
+    }, [governance, proposalId])
 
     const chartData = {
-        labels: proposals.slice(0, 8).map((p) => `#${p.id}`),
+        labels: ['votes for', 'votes against'],
         datasets: [
             {
-                label: 'For',
-                data: proposals.slice(0, 8).map((p) => p.forVotes),
-                backgroundColor: 'rgba(74, 222, 128, 0.7)',
-                borderRadius: 4,
-            },
-            {
-                label: 'Against',
-                data: proposals.slice(0, 8).map((p) => p.againstVotes),
-                backgroundColor: 'rgba(248, 113, 113, 0.7)',
-                borderRadius: 4,
+                label: 'votes',
+                data: [results.for, results.against],
+                backgroundColor: ['rgba(16, 185, 129, 0.6)', 'rgba(239, 68, 68, 0.6)'],
+                borderColor: ['rgba(16, 185, 129, 1)', 'rgba(239, 68, 68, 1)'],
+                borderWidth: 2,
+                borderRadius: 8,
             },
         ],
     }
 
-    // No wallet
-    if (!account) {
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            title: {
+                display: true,
+                text: `live results: proposal #${proposalId ?? '-'}`,
+                color: '#cbd5e1',
+                font: { size: 16, family: "'OTJubilee Diamond', sans-serif" },
+            },
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: { color: '#cbd5e1', precision: 0 },
+                grid: { color: '#334155' },
+            },
+            x: {
+                ticks: { color: '#cbd5e1' },
+                grid: { display: false },
+            },
+        },
+    }
+
+    const formatEth = (wei) => {
+        try { return ethers.formatEther(wei) } catch { return '0' }
+    }
+
+    if (loading) {
         return (
             <div className="page-wrapper">
                 <StarField />
                 <div className="page-content">
-                    <SectionParticles variant="purple" density={40} />
+                    <SectionParticles variant="mixed" density={50} />
+                    <div style={{ textAlign: 'center', padding: '120px 0' }}>
+                        <div className="page-spinner" style={{ margin: '0 auto 16px' }}></div>
+                        <p style={{ opacity: 0.5 }}>loading blockchain data...</p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
+    if (proposalId === null) {
+        return (
+            <div className="page-wrapper">
+                <StarField />
+                <div className="page-content">
+                    <SectionParticles variant="mixed" density={50} />
                     <div className="page-header">
                         <Link to="/" className="page-back">← back to home</Link>
-                        <h1 className="typo-h1" style={{ color: '#F6FF0D' }}>connect wallet</h1>
-                        <p className="page-subtitle">connect your wallet to view live voting results</p>
+                        <h1 className="typo-h1" style={{ color: '#F6FF0D' }}>live results</h1>
+                        <p className="page-subtitle">real-time election dashboard</p>
                     </div>
-                    <div className="page-grid" style={{ justifyContent: 'center' }}>
-                        <div className="page-card" style={{ textAlign: 'center', maxWidth: '500px' }}>
-                            <div className="page-card-icon">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="#F6FF0D" strokeWidth="1.5">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                                </svg>
-                            </div>
-                            <h3 className="typo-h4">wallet required</h3>
-                            <p>connect your MetaMask wallet to access live voting analytics.</p>
-                            <button className="btn btn--important" style={{ marginTop: '20px' }} onClick={connect}>
-                                <span className="btn-inner"><span>connect MetaMask</span></span>
-                            </button>
-                        </div>
+                    <div className="page-card" style={{ textAlign: 'center', padding: '80px 40px' }}>
+                        <div style={{ fontSize: '64px', marginBottom: '16px' }}>🗳️</div>
+                        <h3 className="typo-h3" style={{ marginBottom: '8px' }}>waiting for election to start</h3>
+                        <p style={{ opacity: 0.6 }}>no proposals found on the blockchain yet</p>
                     </div>
                 </div>
             </div>
@@ -171,119 +174,101 @@ export default function ResultsPage() {
         <div className="page-wrapper">
             <StarField />
             <div className="page-content">
-                <SectionParticles variant="purple" density={40} />
+                <SectionParticles variant="mixed" density={50} />
                 <div className="page-header">
                     <Link to="/" className="page-back">← back to home</Link>
-                    <h1 className="typo-h1" style={{ color: '#F6FF0D' }}>
-                        <span className={`live-dot ${liveIndicator ? 'pulse' : ''}`}>●</span> live results
-                    </h1>
-                    <p className="page-subtitle">real-time voting analytics powered by on-chain data</p>
-                    <button className="btn btn--smaller" onClick={fetchResults} disabled={loading} style={{ marginTop: '12px' }}>
-                        <span className="btn-inner"><span>{loading ? '⏳' : '↻'} refresh</span></span>
-                    </button>
+                    <h1 className="typo-h1" style={{ color: '#F6FF0D' }}>live results</h1>
+                    <p className="page-subtitle">real-time election dashboard with transparent audit trail</p>
                 </div>
 
-                {loading ? (
-                    <div style={{ textAlign: 'center', padding: '60px 0' }}>
-                        <div className="page-spinner"></div>
-                        <p style={{ opacity: 0.5, marginTop: '16px' }}>fetching results from blockchain...</p>
+                {proposal && (
+                    <div className="page-card" style={{ marginBottom: '32px' }}>
+                        <h3 className="typo-h4" style={{ marginBottom: '12px', color: '#F6FF0D' }}>
+                            proposal #{proposalId}
+                        </h3>
+                        <p style={{ fontSize: '15px', lineHeight: 1.6, marginBottom: '16px' }}>
+                            {proposal.description}
+                        </p>
+                        {proposal.amount > 0 && (
+                            <p style={{ fontSize: '13px', opacity: 0.6 }}>
+                                💰 {formatEth(proposal.amount)} ETH → <span style={{ fontFamily: 'monospace', fontSize: '11px' }}>{proposal.recipient?.slice(0, 10)}...</span>
+                            </p>
+                        )}
                     </div>
-                ) : proposals.length === 0 ? (
-                    <div className="page-card" style={{ textAlign: 'center', maxWidth: '500px', margin: '0 auto' }}>
-                        <p style={{ fontSize: '48px', marginBottom: '12px' }}>📊</p>
-                        <h3 className="typo-h4">no proposals found</h3>
-                        <p style={{ opacity: 0.6, marginTop: '8px' }}>create a proposal first from the voting page</p>
+                )}
+
+                <div className="page-results-grid">
+                    {/* Chart */}
+                    <div className="page-result-card">
+                        <h2 className="typo-h3" style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#4ade80' }}>📊</span> real-time tally
+                        </h2>
+                        <div style={{ height: '320px' }}>
+                            <Bar options={chartOptions} data={chartData} />
+                        </div>
                     </div>
-                ) : (
-                    <>
-                        {/* Chart Overview */}
-                        <div className="page-result-card" style={{ marginBottom: '24px' }}>
-                            <h3 className="typo-h4" style={{ marginBottom: '16px' }}>vote distribution overview</h3>
-                            <div className="page-chart-container">
-                                <Bar data={chartData} options={chartOptions} />
-                            </div>
-                        </div>
 
-                        {/* Individual Results */}
-                        <div className="page-results-grid">
-                            {proposals.map((p) => (
-                                <div key={p.id} className="page-result-card">
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                                        <h4 className="typo-h4" style={{ flex: 1 }}>
-                                            <span style={{ opacity: 0.4, marginRight: '8px' }}>#{p.id}</span>
-                                            {p.description}
-                                        </h4>
-                                        <span style={{
-                                            fontSize: '12px', padding: '4px 12px', borderRadius: '999px',
-                                            background: p.state === 'Active' ? 'rgba(34,211,238,0.15)' : 'rgba(252,252,252,0.06)',
-                                            color: p.state === 'Active' ? '#22d3ee' : 'rgba(252,252,252,0.5)',
-                                            marginLeft: '12px', whiteSpace: 'nowrap'
-                                        }}>
-                                            {p.state === 'Active' && <span className={`live-dot ${liveIndicator ? 'pulse' : ''}`}>● </span>}
-                                            {p.state}
-                                        </span>
-                                    </div>
+                    {/* Audit Log */}
+                    <div className="page-result-card" style={{ display: 'flex', flexDirection: 'column', maxHeight: '500px' }}>
+                        <h2 className="typo-h3" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#F6FF0D' }}>📜</span> audit trail
+                            <span style={{ marginLeft: 'auto', fontSize: '11px', fontWeight: 'normal', opacity: 0.5, background: 'rgba(246, 255, 13, 0.1)', padding: '4px 12px', borderRadius: '12px' }}>
+                                ● live feed
+                            </span>
+                        </h2>
 
-                                    <div className="page-result-bars">
-                                        <div className="page-result-row">
-                                            <span className="page-result-label">for</span>
-                                            <div className="page-result-bar-track">
-                                                <div className="page-result-bar-fill for" style={{ width: `${p.forPct}%` }}></div>
-                                            </div>
-                                            <span className="page-result-value">{p.forVotes.toFixed(2)} ({p.forPct}%)</span>
-                                        </div>
-                                        <div className="page-result-row">
-                                            <span className="page-result-label">against</span>
-                                            <div className="page-result-bar-track">
-                                                <div className="page-result-bar-fill against" style={{ width: `${p.againstPct}%` }}></div>
-                                            </div>
-                                            <span className="page-result-value">{p.againstVotes.toFixed(2)} ({p.againstPct}%)</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="page-result-meta">
-                                        <span>total votes: {p.total.toFixed(2)}</span>
-                                        <span>ends: {new Date(p.endTime * 1000).toLocaleDateString()}</span>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Audit Log */}
-                        <div className="page-result-card" style={{ marginTop: '32px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                                <h3 className="typo-h4">
-                                    <span className={`live-dot ${liveIndicator ? 'pulse' : ''}`}>●</span> real-time audit trail
-                                </h3>
-                                <span style={{ fontSize: '12px', opacity: 0.4 }}>{auditLog.length} events</span>
-                            </div>
-
+                        <div style={{ flex: 1, overflowY: 'auto', paddingRight: '8px' }}>
                             {auditLog.length === 0 ? (
-                                <p style={{ textAlign: 'center', opacity: 0.4, padding: '24px 0', fontSize: '14px' }}>
-                                    waiting for new votes... events will appear here in real-time
+                                <p style={{ textAlign: 'center', opacity: 0.4, padding: '40px 0', fontStyle: 'italic' }}>
+                                    no votes cast yet. be the first!
                                 </p>
                             ) : (
-                                <div style={{ maxHeight: '300px', overflowY: 'auto', fontSize: '13px' }}>
-                                    {auditLog.map((log) => (
-                                        <div key={log.id} style={{
-                                            display: 'flex', gap: '12px', padding: '10px 0', alignItems: 'center',
-                                            borderBottom: '1px solid rgba(252,252,252,0.04)',
-                                        }}>
-                                            <span style={{ opacity: 0.4, minWidth: '70px' }}>{log.time}</span>
-                                            <span style={{ color: log.support ? '#4ade80' : '#f87171' }}>
-                                                {log.support ? '✓ FOR' : '✗ AGAINST'}
-                                            </span>
-                                            <span style={{ opacity: 0.6 }}>proposal #{log.proposalId}</span>
-                                            <span style={{ opacity: 0.3, letterSpacing: '0.03em', fontFamily: 'monospace', fontSize: '11px' }}>
-                                                {log.voter?.substring(0, 8)}...
-                                            </span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                    {auditLog.map((log, index) => (
+                                        <div
+                                            key={`${log.txHash}-${index}`}
+                                            style={{
+                                                padding: '12px',
+                                                borderRadius: '8px',
+                                                border: `1px solid ${log.support ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'}`,
+                                                background: log.isNew ? (log.support ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)') : 'rgba(0, 0, 0, 0.2)',
+                                                display: 'flex',
+                                                gap: '12px',
+                                                transition: 'all 0.5s ease'
+                                            }}
+                                        >
+                                            <div style={{
+                                                width: '4px',
+                                                borderRadius: '2px',
+                                                background: log.support ? '#4ade80' : '#ef4444'
+                                            }}></div>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                                    <span style={{
+                                                        fontSize: '13px',
+                                                        fontWeight: 'bold',
+                                                        color: log.support ? '#4ade80' : '#ef4444'
+                                                    }}>
+                                                        {log.support ? 'voted FOR' : 'voted AGAINST'}
+                                                    </span>
+                                                    <span style={{ fontSize: '11px', opacity: 0.5, fontFamily: 'monospace' }}>
+                                                        {log.timestamp}
+                                                    </span>
+                                                </div>
+                                                <div style={{ fontSize: '11px', opacity: 0.6, fontFamily: 'monospace', marginBottom: '2px' }}>
+                                                    wallet: {log.voter.substring(0, 6)}...{log.voter.substring(38)}
+                                                </div>
+                                                <div style={{ fontSize: '10px', opacity: 0.4, fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    tx: {log.txHash}
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             )}
                         </div>
-                    </>
-                )}
+                    </div>
+                </div>
             </div>
         </div>
     )

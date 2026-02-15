@@ -1,7 +1,5 @@
-import { useState, useEffect } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Header from './components/Header'
-import Loader from './components/Loader'
 import Hero from './components/Hero'
 import Liquidity from './components/Liquidity'
 import Flywheel from './components/Flywheel'
@@ -56,16 +54,8 @@ function HomePage() {
 }
 
 function App() {
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 2400)
-    return () => clearTimeout(timer)
-  }, [])
-
   return (
     <>
-      <Loader visible={loading} />
       <StarField />
       <CustomCursor />
       <Header />
