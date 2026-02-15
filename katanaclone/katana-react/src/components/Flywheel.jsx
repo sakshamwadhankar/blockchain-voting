@@ -60,7 +60,7 @@ export default function Flywheel() {
     const [activeIndex, setActiveIndex] = useState(0)
 
     return (
-        <section className="section flywheel" id="flywheel-section">
+        <section className="flywheel" id="flywheel-section">
             <SectionParticles variant="yellow" density={30} />
             <div className="section-container">
                 <div className="flywheel-header">

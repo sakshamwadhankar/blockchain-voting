@@ -4,7 +4,7 @@ import SectionParticles from './SectionParticles'
 
 export default function Liquidity() {
     return (
-        <section className="section liquidity" id="liquidity-section">
+        <section className="liquidity" id="liquidity-section">
             <SectionParticles variant="blue" density={35} />
             <div className="section-container">
                 <div className="liquidity-header">

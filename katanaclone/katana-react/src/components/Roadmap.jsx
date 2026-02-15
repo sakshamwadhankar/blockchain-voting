@@ -25,7 +25,7 @@ const phases = [
 
 export default function Roadmap() {
     return (
-        <section className="section roadmap" id="roadmap-section">
+        <section className="roadmap" id="roadmap-section">
             <SectionParticles variant="blue" density={30} />
             <div className="roadmap-container">
                 <div className="roadmap-header">
