@@ -189,9 +189,9 @@ export default function VerifyIdentity() {
             // Face detected — extract descriptor
             const descriptor = Array.from(detection.descriptor);
             const confidence = (detection.detection.score * 100).toFixed(1);
-            
+
             console.log('[Face Capture] Descriptor length:', descriptor.length);
-            
+
             setStatus({
                 type: "success",
                 message: `✅ Face captured (${confidence}% confidence). Verifying with database...`,
@@ -222,7 +222,7 @@ export default function VerifyIdentity() {
                         message: `✅ ${data.message} Proceeding to OTP...`,
                     });
                 }
-                
+
                 // Auto-advance to step 3 and send OTP
                 setTimeout(() => {
                     setStep(3);
@@ -274,9 +274,9 @@ export default function VerifyIdentity() {
                 // If OTP sending fails (unverified number), show bypass option
                 setOtpSent(true);
                 setMaskedPhone("(Twilio verification failed)");
-                setStatus({ 
-                    type: "error", 
-                    message: `${data.message}. Use test OTP: 123456` 
+                setStatus({
+                    type: "error",
+                    message: `${data.message}. Use test OTP: 123456`
                 });
             }
         } catch {
@@ -303,8 +303,9 @@ export default function VerifyIdentity() {
             const data = await res.json();
             if (data.success) {
                 setTxHash(data.transactionHash);
-                // Mark user as verified after successful OTP
-                markAsVerified();
+                setTxHash(data.transactionHash);
+                // Mark user as verified after successful OTP and store token
+                markAsVerified(data.voterToken);
                 setStatus({
                     type: "success",
                     message: "✅ Verification complete! Redirecting to vote...",
@@ -412,7 +413,7 @@ export default function VerifyIdentity() {
                 <div className="glass p-6 space-y-5 animate-fade-up">
                     <div className="flex items-center justify-between mb-2">
                         <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                            <span className="text-2xl">🪪</span> 
+                            <span className="text-2xl">🪪</span>
                             {manualEntry ? "Enter Employee ID" : "Scan Your Employee ID"}
                         </h2>
                         <button

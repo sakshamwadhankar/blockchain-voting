@@ -7,15 +7,16 @@ import Login from "./pages/Login";
 import VerifyIdentity from "./pages/VerifyIdentity";
 import VotingBooth from "./pages/VotingBooth";
 import LiveResults from "./pages/LiveResults";
-import AdminPanel from "./pages/AdminPanel";
-import RegisterEmployee from "./pages/RegisterEmployee";
+import ElectionDashboard from "./pages/ElectionDashboard";
+import UnifiedAdminPanel from "./pages/UnifiedAdminPanel";
 import "./index.css";
 
 const navItems = [
   { path: "/", label: "Verify ID", icon: "🪪", adminOnly: false },
   { path: "/vote", label: "Vote", icon: "🗳️", adminOnly: false },
   { path: "/results", label: "Results", icon: "📊", adminOnly: false },
-  { path: "/admin", label: "Admin", icon: "⚙️", adminOnly: true },
+  { path: "/elections", label: "Elections", icon: "🏛️", adminOnly: false },
+  { path: "/admin", label: "Admin Dashboard", icon: "⚙️", adminOnly: true },
 ];
 
 function Layout() {
@@ -52,7 +53,7 @@ function Layout() {
             {navItems.map(({ path, label, icon, adminOnly }) => {
               // Hide admin link for non-admin users
               if (adminOnly && !isAdmin()) return null;
-              
+
               return (
                 <NavLink
                   key={path}
@@ -109,7 +110,7 @@ function Layout() {
             }
           />
           <Route
-            path="/results"
+            path="/results/:id"
             element={
               <ProtectedRoute>
                 <LiveResults />
@@ -120,15 +121,15 @@ function Layout() {
             path="/admin"
             element={
               <ProtectedRoute adminOnly={true}>
-                <AdminPanel />
+                <UnifiedAdminPanel />
               </ProtectedRoute>
             }
           />
           <Route
-            path="/register-employee"
+            path="/elections"
             element={
-              <ProtectedRoute adminOnly={true}>
-                <RegisterEmployee />
+              <ProtectedRoute>
+                <ElectionDashboard />
               </ProtectedRoute>
             }
           />

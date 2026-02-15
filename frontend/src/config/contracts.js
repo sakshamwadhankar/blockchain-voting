@@ -1,28 +1,28 @@
 // ── Contract Config ─────────────────────────────────────
-// After deploying, update these addresses or import from ../contracts/
-export const GOVERNANCE_ADDRESS = "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"; // PASTE LOCAL ADDRESS HERE
+// Last updated from frontend/public/deployments/election-localhost.json
+export const GOVERNANCE_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"; // ElectionManager Address
 export const VAULT_ADDRESS = "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e";
 export const TOKEN_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 export const BACKEND_URL = "http://localhost:5000";
 
-export const GOVERNANCE_ABI = [
-    "function propose(string description, address recipient, uint256 amount) external returns (uint256)",
-    "function vote(uint256 id, bool support) external",
-    "function execute(uint256 id) external",
-    "function cancel(uint256 id) external",
-    "function getProposal(uint256 id) external view returns (address proposer, string description, address recipient, uint256 amount, uint256 forVotes, uint256 againstVotes, uint256 startTime, uint256 endTime, bool executed, bool cancelled)",
-    "function state(uint256 id) public view returns (uint8)",
-    "function isVerified(address) public view returns (bool)",
-    "function hasVoted(uint256 id, address account) external view returns (bool)",
-    "function nextProposalId() public view returns (uint256)",
-    "function governanceToken() public view returns (address)",
-    "function votingPeriod() public view returns (uint256)",
-    "event ProposalCreated(uint256 indexed id, address indexed proposer, string description, address recipient, uint256 amount)",
-    "event Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight)",
-    "event ProposalExecuted(uint256 indexed id)",
-    "event ProposalCancelled(uint256 indexed id)",
+export const ELECTION_MANAGER_ABI = [
+    "function createElection(string position, uint256 durationInDays) external returns (uint256)",
+    "function addCandidate(uint256 electionId, string name, string employeeId, string department, string manifestoIPFS) external",
+    "function issueVoterToken(string corporateId, string mfaCode) external returns (bytes32)",
+    "function castVote(uint256 electionId, uint256 candidateId, bytes32 corporateId, bytes32 voterToken) external",
+    "function finalizeElection(uint256 electionId) external",
+    "function getElection(uint256 electionId) external view returns (string position, uint256 startTime, uint256 endTime, bool isActive, bool resultsPublished, uint256 totalVotes, uint256 candidateCount)",
+    "function getCandidate(uint256 electionId, uint256 candidateId) external view returns (string name, string employeeId, string department, string manifestoIPFS, uint256 voteCount, bool isActive)",
+    "function getWinningCandidate(uint256 electionId) public view returns (uint256)",
+    "function hasVotedInElection(uint256 electionId, bytes32 corporateIdHash) external view returns (bool)",
+    "function getAuditTrailLength() external view returns (uint256)",
+    "function getAuditRecord(uint256 index) external view returns (uint256 electionId, uint256 timestamp, bytes32 voterHash, bool verified)",
+    "function nextElectionId() public view returns (uint256)"
 ];
+
+// Kept for reference but likely unused if migrating fully
+export const GOVERNANCE_ABI = ELECTION_MANAGER_ABI;
 
 export const STATE_LABELS = ["Pending", "Active", "Succeeded", "Defeated", "Executed", "Cancelled"];
 

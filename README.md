@@ -2,6 +2,26 @@
 
 A secure, decentralized voting platform with AI-powered biometric verification, built on Ethereum blockchain.
 
+## 🏛️ NEW: National-Level Election System
+
+**Production-grade multi-candidate election management system with MFA security and real-time analytics!**
+
+👉 **[Quick Start Guide](QUICK_START.md)** | **[Full Documentation](ELECTION_SYSTEM.md)** | **[Hackathon Pitch](HACKATHON_PITCH.md)**
+
+### Key Features
+- ✅ Multi-candidate elections (up to 10 candidates)
+- ✅ MFA token authentication
+- ✅ Privacy-preserving vote recording
+- ✅ Real-time dashboard with live charts
+- ✅ Complete audit trail
+- ✅ IPFS manifesto integration
+
+### Quick Access
+- **Dashboard**: http://localhost:5173/elections
+- **Admin Panel** (includes voting): http://localhost:5173/election-admin
+
+---
+
 ## ✨ Features
 
 ### 🔐 Multi-Layer Security
