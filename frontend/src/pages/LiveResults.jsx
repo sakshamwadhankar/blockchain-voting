@@ -1,6 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useParams, Link } from "react-router-dom";
 import { ethers } from "ethers";
-import { useWallet } from "../context/WalletContext";
+import ElectionService from "../services/electionService";
+import FirebaseService from "../services/firebaseService";
+import { GOVERNANCE_ADDRESS } from "../config/contracts";
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -12,130 +15,111 @@ import {
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 
-// ── Register Chart.js components ───────────────────────
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+
+const electionService = new ElectionService(GOVERNANCE_ADDRESS);
 
 export default function LiveResults() {
-    const { governanceContract } = useWallet();
+    const { id } = useParams();
     const [loading, setLoading] = useState(true);
-
-    // Dashboard Data State
-    const [proposalId, setProposalId] = useState(null);
-    const [results, setResults] = useState({ for: 0, against: 0 });
+    const [election, setElection] = useState(null);
+    const [candidates, setCandidates] = useState([]);
     const [auditLog, setAuditLog] = useState([]);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-    // ── Fetch Initial Data & Listen for Live Events ───────
+    // ── Load Data ──────────────────────────────────────
     useEffect(() => {
-        if (!governanceContract) return;
-
-        let isMounted = true;
+        if (!id) return;
 
         const fetchData = async () => {
             try {
-                // 1. Get the latest proposal ID
-                // Note: In a real app, you might want a dropdown to select proposals.
-                // For this demo, we'll just grab the latest one created.
-                const nextId = await governanceContract.nextProposalId();
-                const currentId = Number(nextId) - 1;
+                setLoading(true);
+                await electionService.initialize();
 
-                if (currentId < 0) {
-                    setLoading(false);
-                    return; // No proposals yet
-                }
+                // 1. Election Details
+                const chainElection = await electionService.getElection(id);
+                const metaElection = await FirebaseService.getElectionMetadata(id) || {};
 
-                setProposalId(currentId);
-
-                // 2. Fetch current vote counts from chain
-                const proposal = await governanceContract.getProposal(currentId);
-                setResults({
-                    for: Number(proposal.forVotes),
-                    against: Number(proposal.againstVotes),
+                setElection({
+                    id,
+                    ...chainElection,
+                    ...metaElection,
+                    position: chainElection.position || metaElection.title || `Election #${id}`
                 });
 
-                // 3. Fetch past "Voted" events for the Audit Trail
-                // Filter: Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight)
-                const filter = governanceContract.filters.Voted(currentId);
-                const events = await governanceContract.queryFilter(filter);
+                // 2. Candidates & Votes
+                const chainCandidates = await electionService.getAllCandidates(id);
+                const fireCandidates = await FirebaseService.getCandidates(id);
 
-                const formattedLog = await Promise.all(
-                    events.map(async (e) => {
-                        const block = await e.getBlock();
-                        return {
-                            txHash: e.hash,
-                            voter: e.args[1],
-                            support: e.args[2],
-                            weight: e.args[3].toString(),
-                            timestamp: new Date(block.timestamp * 1000).toLocaleTimeString(),
-                        };
-                    })
-                );
+                const mergedCandidates = chainCandidates.map(c => {
+                    const meta = fireCandidates.find(fc => fc.candidateId == c.id) || {};
+                    return { ...c, ...meta };
+                });
 
-                // Sort: Newest first
-                if (isMounted) {
-                    setAuditLog(formattedLog.reverse());
-                    setLoading(false);
-                }
+                setCandidates(mergedCandidates);
+
+                // 3. Audit Log
+                // Fetch recent logs from blockchain (VoteCast events)
+                // Note: electionService needs a method for this, or we query straight from contract
+                // electionService.getAuditTrail() gets ALL logs. Filter by electionId locally or add filter method.
+                // ideally: electionService.getElectionVotes(id)
+
+                // For now, let's use the event listener approach for LIVE updates, 
+                // and fetch last 50 events for initial state if possible.
+                // Assuming getAuditTrail returns all, we filter.
+                const allLogs = await electionService.getAuditTrail(100);
+                const electionLogs = allLogs.filter(l => l.electionId == id);
+                setAuditLog(electionLogs);
+
             } catch (err) {
-                console.error("Error fetching dashboard data:", err);
+                console.error("Error loading results:", err);
+            } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
 
-        // ── Real-Time Listener ─────────────────────────────
-        // Listen for ANY vote on ANY proposal (or filter by ID if preferred)
-        const handleNewVote = async (id, voter, support, weight, event) => {
-            // Only update if it matches our current view
-            const votedId = Number(id);
-            if (proposalId !== null && votedId !== proposalId) return;
+        // ── Real-Time Listener ─────────────────────────
+        const handleNewVote = (voteEvent) => {
+            if (voteEvent.electionId != id) return;
 
-            // Update Chart Data locally (optimistic or separate fetch)
-            setResults((prev) => ({
-                for: support ? prev.for + Number(weight) : prev.for,
-                against: !support ? prev.against + Number(weight) : prev.against,
-            }));
+            // Update Candidates Optimistically? 
+            // We don't know who they voted for from the event (voterHash, timestamp only).
+            // BUT existing `VoteCast` event definition: event VoteCast(uint256 indexed electionId, bytes32 indexed voterHash, uint256 timestamp)
+            // It does NOT reveal candidateId to preserve ballot secrecy during the vote? 
+            // Wait, standard blockchain voting usually REVEALS the vote tally in real-time or encrypted.
+            // Our contract `castVote` updates `candidate.voteCount`.
+            // So we can re-fetch candidates on every vote event.
 
-            // Add to Audit Log
-            const block = await event.getBlock();
-            const newLogItem = {
-                txHash: event.hash,
-                voter: voter,
-                support: support,
-                weight: weight.toString(),
-                timestamp: new Date(block.timestamp * 1000).toLocaleTimeString(),
-                isNew: true, // For UI highlight effect
-            };
+            setRefreshTrigger(prev => prev + 1); // Trigger re-fetch
 
-            setAuditLog((prev) => [newLogItem, ...prev]);
+            setAuditLog(prev => [{
+                electionId: voteEvent.electionId,
+                voterHash: voteEvent.voterHash,
+                timestamp: voteEvent.timestamp,
+                verified: true, // on-chain
+                isNew: true
+            }, ...prev]);
         };
 
-        // Attach listener
-        governanceContract.on("Voted", handleNewVote);
+        electionService.onVoteCast(handleNewVote);
 
-        // Cleanup
         return () => {
-            isMounted = false;
-            governanceContract.off("Voted", handleNewVote);
+            electionService.removeAllListeners();
         };
-    }, [governanceContract, proposalId]);
 
-    // ── Chart Config ───────────────────────────────────────
+    }, [id, refreshTrigger]);
+
+    // ── Chart Data ─────────────────────────────────────
     const chartData = {
-        labels: ["Votes For", "Votes Against"],
+        labels: candidates.map(c => c.name),
         datasets: [
             {
-                label: "Votes",
-                data: [results.for, results.against],
-                backgroundColor: ["rgba(16, 185, 129, 0.6)", "rgba(239, 68, 68, 0.6)"],
-                borderColor: ["rgba(16, 185, 129, 1)", "rgba(239, 68, 68, 1)"],
+                label: 'Votes',
+                data: candidates.map(c => c.voteCount),
+                backgroundColor: candidates.map((_, i) => `hsla(${i * 50 + 200}, 70%, 50%, 0.6)`),
+                borderColor: candidates.map((_, i) => `hsla(${i * 50 + 200}, 70%, 50%, 1)`),
                 borderWidth: 2,
                 borderRadius: 8,
             },
@@ -148,114 +132,108 @@ export default function LiveResults() {
             legend: { display: false },
             title: {
                 display: true,
-                text: `Live Results: Proposal #${proposalId ?? "-"}`,
-                color: "#94a3b8",
-                font: { size: 16 },
+                text: 'Live Results',
+                color: '#94a3b8',
+                font: { size: 16 }
             },
         },
         scales: {
             y: {
                 beginAtZero: true,
-                ticks: { color: "#cbd5e1", precision: 0 },
-                grid: { color: "#334155" },
+                ticks: { color: "#cbd5e1", stepSize: 1 },
+                grid: { color: "#334155" }
             },
             x: {
                 ticks: { color: "#cbd5e1" },
-                grid: { display: false },
-            },
-        },
+                grid: { display: false }
+            }
+        }
     };
 
-    // ── Render ─────────────────────────────────────────────
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[60vh] text-cyan-400 animate-pulse">
-                Loading blockchain data...
-            </div>
-        );
-    }
+    if (loading) return (
+        <div className="flex h-[50vh] items-center justify-center">
+            <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+    );
 
-    if (proposalId === null) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] animate-fade-up">
-                <div className="text-6xl mb-4">🗳️</div>
-                <h2 className="text-xl font-bold text-white mb-2">
-                    Waiting for Election to Start
-                </h2>
-                <p className="text-slate-400">
-                    No proposals found on the blockchain yet.
-                </p>
-            </div>
-        );
-    }
+    if (!election) return <div className="text-center py-20 text-slate-400">Election not found.</div>;
+
+    const totalVotes = candidates.reduce((sum, c) => sum + c.voteCount, 0);
 
     return (
-        <div className="max-w-6xl mx-auto py-8 px-4 animate-fade-up">
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent mb-8">
-                Live Election Dashboard
-            </h1>
+        <div className="max-w-7xl mx-auto px-4 py-8 animate-fade-up">
+            <Link to="/vote" className="text-slate-400 hover:text-white mb-6 inline-block">← Back to Voting</Link>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* ── Left Column: Chart ──────────────────────── */}
-                <div className="glass p-6">
-                    <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-                        <span className="text-emerald-400">📊</span> Real-Time Tally
-                    </h2>
-                    <div className="h-64 sm:h-80">
+            <div className="flex flex-col md:flex-row items-end justify-between gap-6 mb-8">
+                <div>
+                    <span className={`inline-block px-3 py-1 text-xs font-bold rounded-full mb-3 ${election.isActive ? "bg-emerald-500 text-emerald-950" : "bg-red-500 text-white"
+                        }`}>
+                        {election.isActive ? "LIVE COUNTING" : "FINAL RESULTS"}
+                    </span>
+                    <h1 className="text-4xl font-bold text-white">{election.position}</h1>
+                    <p className="text-slate-400 mt-1">Total Votes Cast: <span className="text-white font-mono text-xl">{totalVotes}</span></p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* ── Chart Section ────────────────────────── */}
+                <div className="lg:col-span-2 glass p-6">
+                    <h2 className="text-xl font-semibold text-white mb-6">📊 Candidate Tally</h2>
+                    <div className="h-80">
                         <Bar options={chartOptions} data={chartData} />
                     </div>
                 </div>
 
-                {/* ── Right Column: Audit Log ────────────────── */}
+                {/* ── Audit Trail ──────────────────────────── */}
                 <div className="glass p-6 flex flex-col h-[500px]">
                     <h2 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
-                        <span className="text-amber-400">📜</span> Transparent Audit Trail
-                        <span className="ml-auto text-xs font-normal text-slate-400 bg-slate-800 px-2 py-1 rounded-full animate-pulse">
-                            ● Live Feed
-                        </span>
+                        <span>⛓️</span> On-Chain Audit
                     </h2>
-
-                    <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                    <div className="flex-1 overflow-y-auto space-y-3 pr-2 scrollbar-thin scrollbar-thumb-slate-700">
                         {auditLog.length === 0 ? (
-                            <p className="text-center text-slate-500 mt-10 italic">
-                                No votes cast yet. Be the first!
-                            </p>
+                            <p className="text-center text-slate-500 mt-10 italic">No votes recorded yet.</p>
                         ) : (
-                            auditLog.map((log, index) => (
-                                <div
-                                    key={log.txHash} // Ensure logs have unique keys
-                                    className={`p-3 rounded-lg border border-slate-700/50 bg-slate-800/40 flex items-center gap-3 transition-all duration-500 ${log.isNew ? "bg-emerald-500/20 border-emerald-500/50" : ""
-                                        }`}
-                                >
-                                    <div
-                                        className={`w-2 h-full rounded-l-lg self-stretch ${log.support ? "bg-emerald-500" : "bg-red-500"
-                                            }`}
-                                    />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span
-                                                className={`text-sm font-bold ${log.support ? "text-emerald-300" : "text-red-300"
-                                                    }`}
-                                            >
-                                                {log.support ? "Voted FOR" : "Voted AGAINST"}
-                                            </span>
-                                            <span className="text-xs text-slate-500 font-mono">
-                                                {log.timestamp}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-slate-400 font-mono truncate">
-                                            <span className="text-slate-500">Wallet: </span>
-                                            {log.voter.substring(0, 6)}...{log.voter.substring(38)}
-                                        </div>
-                                        <div className="text-[10px] text-slate-600 font-mono truncate mt-0.5">
-                                            Tx: {log.txHash}
-                                        </div>
+                            auditLog.map((log, idx) => (
+                                <div key={idx} className={`p-3 rounded-lg border border-slate-700/50 bg-slate-800/40 text-xs font-mono transition-all ${log.isNew ? 'bg-indigo-500/20 border-indigo-500/50' : ''}`}>
+                                    <div className="flex justify-between text-slate-400 mb-1">
+                                        <span>Block Time: {new Date(log.timestamp * 1000).toLocaleTimeString()}</span>
+                                        <span className="text-emerald-400">Verified</span>
+                                    </div>
+                                    <div className="text-slate-500 truncate" title={log.voterHash}>
+                                        Hash: {log.voterHash}
                                     </div>
                                 </div>
                             ))
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* ── Candidates List ──────────────────────────── */}
+            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {candidates.map(candidate => (
+                    <div key={candidate.id} className="glass p-6 border-l-4" style={{ borderLeftColor: `hsla(${candidate.id * 50 + 200}, 70%, 50%, 1)` }}>
+                        <div className="flex justify-between items-start">
+                            <div>
+                                <h3 className="text-lg font-bold text-white">{candidate.name}</h3>
+                                <p className="text-sm text-slate-400">{candidate.department}</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="block text-2xl font-bold text-white">{candidate.voteCount}</span>
+                                <span className="text-xs text-slate-500">votes</span>
+                            </div>
+                        </div>
+                        <div className="mt-4 w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+                            <div
+                                className="h-full bg-indigo-500"
+                                style={{
+                                    width: `${totalVotes > 0 ? (candidate.voteCount / totalVotes) * 100 : 0}%`,
+                                    backgroundColor: `hsla(${candidate.id * 50 + 200}, 70%, 50%, 1)`
+                                }}
+                            />
+                        </div>
+                    </div>
+                ))}
             </div>
         </div>
     );

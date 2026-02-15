@@ -10,7 +10,22 @@ const fs = require('fs');
 const path = require('path');
 
 // ── Mock Employee Database ──────────────────────────────
-const employees = require('./data/employees.json');
+// Check if file exists, else use empty array or basic mock
+let employees = [];
+try {
+    const dataPath = path.join(__dirname, 'data', 'employees.json');
+    if (fs.existsSync(dataPath)) {
+        employees = require('./data/employees.json');
+    } else {
+        console.warn("⚠️ data/employees.json not found. Using empty database.");
+        // Fallback or ensure directory exists
+        if (!fs.existsSync(path.join(__dirname, 'data'))) {
+            fs.mkdirSync(path.join(__dirname, 'data'));
+        }
+    }
+} catch (err) {
+    console.error("Error loading employees:", err);
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -32,29 +47,92 @@ try {
     if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_ACCOUNT_SID !== 'your_twilio_sid') {
         twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
     } else {
-        console.warn("⚠️ Twilio credentials missing or invalid. OTP will fail.");
+        console.warn("⚠️ Twilio credentials missing or invalid. OTP might fail unless bypassed.");
     }
 } catch (error) {
     console.error("⚠️ Failed to initialize Twilio:", error.message);
 }
 
-// ── Blockchain Setup (Oracle Backend) ───────────────────
-const provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
-const wallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, provider);
-// Convert to proper checksum format
-const governanceAddress = ethers.getAddress(process.env.GOVERNANCE_CONTRACT_ADDRESS.toLowerCase());
+// ── Blockchain Setup ────────────────────────────────────
+const RPC_URL = process.env.RPC_URL || "http://127.0.0.1:8545";
+const PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY;
+const ELECTION_MANAGER_ADDRESS = process.env.ELECTION_MANAGER_ADDRESS;
 
-const governanceAbi = [
-    "function verifyVoter(address _voter) external",
-    "function execute(uint256 id) external",
-    "function getProposal(uint256 id) external view returns (address proposer, string description, address recipient, uint256 amount, uint256 forVotes, uint256 againstVotes, uint256 startTime, uint256 endTime, bool executed, bool cancelled)",
-    "function state(uint256 id) public view returns (uint8)",
-    "event Voted(uint256 indexed id, address indexed voter, bool support, uint256 weight)",
-    "event ProposalCreated(uint256 indexed id, address indexed proposer, string description, address recipient, uint256 amount)",
-    "event ProposalExecuted(uint256 indexed id)"
+if (!PRIVATE_KEY || !ELECTION_MANAGER_ADDRESS) {
+    console.error("❌ MISSING ENV: ADMIN_PRIVATE_KEY or ELECTION_MANAGER_ADDRESS");
+}
+
+const ELECTION_MANAGER_ABI = [
+    "function createElection(string position, uint256 durationInDays) external returns (uint256)",
+    "function addCandidate(uint256 electionId, string name, string employeeId, string department, string manifestoIPFS) external",
+    "function issueVoterToken(string corporateId, string mfaCode) external returns (bytes32)",
+    "function castVote(uint256 electionId, uint256 candidateId, bytes32 corporateId, bytes32 voterToken) external",
+    "function finalizeElection(uint256 electionId) external",
+    "function getElection(uint256 electionId) external view returns (string position, uint256 startTime, uint256 endTime, bool isActive, bool resultsPublished, uint256 totalVotes, uint256 candidateCount)",
+    "function getCandidate(uint256 electionId, uint256 candidateId) external view returns (string name, string employeeId, string department, string manifestoIPFS, uint256 voteCount, bool isActive)",
+    "function getWinningCandidate(uint256 electionId) public view returns (uint256)",
+    "function hasVotedInElection(uint256 electionId, bytes32 corporateIdHash) external view returns (bool)",
+    "function getAuditTrailLength() external view returns (uint256)",
+    "function getAuditRecord(uint256 index) external view returns (uint256 electionId, uint256 timestamp, bytes32 voterHash, bool verified)",
+    "function nextElectionId() public view returns (uint256)",
+    "event ElectionCreated(uint256 indexed electionId, string position, uint256 startTime, uint256 endTime)",
+    "event CandidateAdded(uint256 indexed electionId, uint256 indexed candidateId, string name, string employeeId)",
+    "event VoteCast(uint256 indexed electionId, bytes32 indexed voterHash, uint256 timestamp)",
+    "event ElectionFinalized(uint256 indexed electionId, uint256 winningCandidateId, uint256 totalVotes)"
 ];
 
-const governanceContract = new ethers.Contract(governanceAddress, governanceAbi, wallet);
+let provider;
+let wallet;
+let electionManager;
+
+async function initBlockchain() {
+    try {
+        provider = new ethers.JsonRpcProvider(RPC_URL);
+        wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+        electionManager = new ethers.Contract(ELECTION_MANAGER_ADDRESS, ELECTION_MANAGER_ABI, wallet);
+        console.log("✅ Connected to Blockchain:", RPC_URL);
+        console.log("✅ Election Manager:", ELECTION_MANAGER_ADDRESS);
+
+        // Setup Event Listeners
+        setupEventListeners();
+    } catch (error) {
+        console.error("❌ Blockchain Connection Failed:", error);
+    }
+}
+
+function setupEventListeners() {
+    if (!electionManager) return;
+
+    electionManager.on("ElectionCreated", (id, position, start, end) => {
+        console.log(`New Election: ${id} - ${position}`);
+        io.emit("newElection", {
+            id: id.toString(),
+            position,
+            startTime: start.toString(),
+            endTime: end.toString()
+        });
+    });
+
+    electionManager.on("VoteCast", (electionId, voterHash, timestamp) => {
+        console.log(`Vote Cast in Election ${electionId}`);
+        io.emit("newVote", {
+            electionId: electionId.toString(),
+            voterHash,
+            timestamp: timestamp.toString()
+        });
+    });
+
+    electionManager.on("ElectionFinalized", (electionId, winnerId, totalVotes) => {
+        console.log(`Election ${electionId} Finalized`);
+        io.emit("electionFinalized", {
+            electionId: electionId.toString(),
+            winnerId: winnerId.toString(),
+            totalVotes: totalVotes.toString()
+        });
+    });
+}
+
+initBlockchain();
 
 // ── Sybil Protection (employeeId → wallet) ──────────────
 const verifiedEmployees = {}; // employeeId → walletAddress
@@ -76,32 +154,9 @@ function getEuclideanDistance(descriptor1, descriptor2) {
     );
 }
 
-// ── Real-Time Event Listeners ───────────────────────────
-
-governanceContract.on("ProposalCreated", (id, proposer, description) => {
-    console.log(`New Proposal: ${id} by ${proposer}`);
-    io.emit("newProposal", {
-        id: id.toString(),
-        proposer: proposer,
-        description: description,
-        timestamp: new Date().toISOString()
-    });
-});
-
-governanceContract.on("Voted", (id, voter, support, weight) => {
-    console.log(`New Vote on Proposal ${id}: ${support ? 'FOR' : 'AGAINST'} by ${voter}`);
-    io.emit("newVote", {
-        proposalId: id.toString(),
-        voter: `${voter.substring(0, 6)}...${voter.substring(38)}`,
-        support: support,
-        weight: weight.toString(),
-        timestamp: new Date().toISOString()
-    });
-});
-
 // ── REST Endpoints ──────────────────────────────────────
 
-// 1. Send OTP — accepts employeeId, looks up phone from database
+// 1. Send OTP
 app.post('/send-otp', async (req, res) => {
     const { employeeId } = req.body;
 
@@ -115,21 +170,26 @@ app.post('/send-otp', async (req, res) => {
     }
 
     try {
-        console.log('[OTP Send] Sending to:', employee.phone, 'Service:', verifyServiceSid);
-        
-        const verification = await twilioClient.verify.v2.services(verifyServiceSid)
-            .verifications
-            .create({ to: employee.phone, channel: 'sms' });
+        console.log('[OTP Send] Sending to:', employee.phone);
 
-        console.log('[OTP Send] Success! Status:', verification.status);
+        let status = 'pending';
+        // Only attempt Twilio if configured
+        if (twilioClient && verifyServiceSid) {
+            const verification = await twilioClient.verify.v2.services(verifyServiceSid)
+                .verifications
+                .create({ to: employee.phone, channel: 'sms' });
+            status = verification.status;
+        } else {
+            console.log("Mock OTP sent (Twilio disabled)");
+            status = 'sent (mock)';
+        }
 
-        // Return masked phone for UI display (don't reveal full number)
         const maskedPhone = employee.phone.replace(/(\+\d{2})\d{6}(\d{4})/, '$1******$2');
 
         res.status(200).json({
             success: true,
             message: `OTP sent to ${maskedPhone}`,
-            status: verification.status,
+            status: status,
             employeeName: employee.name,
             maskedPhone: maskedPhone
         });
@@ -139,12 +199,12 @@ app.post('/send-otp', async (req, res) => {
     }
 });
 
-// 2. Verify OTP & Authorize Voter — uses employeeId to look up phone
+// 2. Verify OTP & Issue Token
 app.post('/verify-otp', async (req, res) => {
-    const { employeeId, code, walletAddress } = req.body;
+    const { employeeId, code } = req.body;
 
-    if (!employeeId || !code || !walletAddress) {
-        return res.status(400).json({ success: false, message: 'employeeId, code, and walletAddress are required' });
+    if (!employeeId || !code) {
+        return res.status(400).json({ success: false, message: 'employeeId and code are required' });
     }
 
     const employee = findEmployee(employeeId);
@@ -152,118 +212,56 @@ app.post('/verify-otp', async (req, res) => {
         return res.status(404).json({ success: false, message: 'Employee not found' });
     }
 
-    // Sybil check: prevent double-registration
-    // Dynamic Wallet Binding & Sybil Protection
-    if (!employee.wallet) {
-        // First-time bind
-        employee.wallet = walletAddress;
-        console.log(`[Auto-Bind] Linked wallet ${walletAddress} to employee ${employeeId}`);
-
-        // Persist to JSON file
-        try {
-            const filePath = path.join(__dirname, 'data', 'employees.json');
-            fs.writeFileSync(filePath, JSON.stringify(employees, null, 4));
-            console.log("[Auto-Bind] Persisted to employees.json");
-        } catch (err) {
-            console.error("[Auto-Bind] Failed to save database:", err);
-        }
-    } else if (employee.wallet.toLowerCase() !== walletAddress.toLowerCase()) {
-        // Mismatch - Block request
-        return res.status(403).json({
-            success: false,
-            message: `Sybil Protection: This ID is bound to another wallet (${employee.wallet.substring(0, 6)}...)`
-        });
-    }
-
     try {
-        // Test/Development Mode: Accept 123456 as bypass OTP
+        // Mock Verification
+        let isVerified = false;
         if (code.trim() === '123456') {
-            console.log('[OTP Verify] Using test OTP bypass for development');
-            
-            // On-chain authorization
-            const tx = await governanceContract.verifyVoter(walletAddress);
-            await tx.wait();
-
-            verifiedEmployees[employeeId] = walletAddress;
-
-            return res.status(200).json({
-                success: true,
-                message: 'Voter verified and authorized on-chain (Test Mode)',
-                transactionHash: tx.hash,
-                employeeName: employee.name,
-                testMode: true
-            });
+            console.log('[OTP Verify] Using test OTP bypass');
+            isVerified = true;
+        } else if (twilioClient && verifyServiceSid) {
+            const check = await twilioClient.verify.v2.services(verifyServiceSid)
+                .verificationChecks.create({ to: employee.phone, code: code.toString().trim() });
+            isVerified = (check.status === 'approved');
+        } else {
+            return res.status(500).json({ success: false, message: 'Twilio not configured and code is not mock code.' });
         }
 
-        // Real Twilio verification
-        const verificationCheck = await twilioClient.verify.v2
-            .services(verifyServiceSid)
-            .verificationChecks
-            .create({ 
-                to: employee.phone, 
-                code: code.toString().trim()
-            });
-
-        console.log('[OTP Verify] Status:', verificationCheck.status);
-
-        if (verificationCheck.status !== 'approved') {
+        if (!isVerified) {
             return res.status(400).json({ success: false, message: 'Invalid OTP' });
         }
 
-        // On-chain authorization
-        const tx = await governanceContract.verifyVoter(walletAddress);
+        // OTP Verified. Issue Token via Blockchain.
+        console.log(`Issuing token for ${employeeId}...`);
+
+        // 1. Simulate to get the token (staticCall)
+        // Note: issueVoterToken(string corporateId, string mfaCode)
+        // Ideally we pass the hash of mfaCode or something secure, but for prototype we pass code.
+        const voterToken = await electionManager.issueVoterToken.staticCall(employeeId, code);
+        console.log("Generated Token (StaticCall):", voterToken);
+
+        // 2. Execute transaction to record issuance (state change)
+        const tx = await electionManager.issueVoterToken(employeeId, code);
+        console.log("Transaction sent:", tx.hash);
+
+        // Wait for confirmation
         await tx.wait();
+        console.log("Transaction confirmed");
 
-        verifiedEmployees[employeeId] = walletAddress;
-
-        res.status(200).json({
+        res.json({
             success: true,
-            message: 'Voter verified and authorized on-chain',
-            transactionHash: tx.hash,
+            message: "Identity Verified & Token Issued",
+            voterToken: voterToken,
+            txHash: tx.hash,
             employeeName: employee.name
         });
+
     } catch (error) {
-        console.error('Error in verification flow:', error);
-        console.error('Error details:', {
-            code: error.code,
-            status: error.status,
-            message: error.message,
-            moreInfo: error.moreInfo
-        });
-        
-        // If Twilio verification fails but we want to proceed anyway (for testing)
-        if (error.code === 20404) {
-            console.warn('[OTP Verify] Twilio service not found - attempting blockchain verification anyway');
-            try {
-                const tx = await governanceContract.verifyVoter(walletAddress);
-                await tx.wait();
-                
-                verifiedEmployees[employeeId] = walletAddress;
-                
-                return res.status(200).json({
-                    success: true,
-                    message: 'Voter authorized on-chain (OTP verification skipped)',
-                    transactionHash: tx.hash,
-                    employeeName: employee.name,
-                    warning: 'Twilio OTP verification was skipped'
-                });
-            } catch (blockchainError) {
-                return res.status(500).json({ 
-                    success: false, 
-                    message: `Blockchain error: ${blockchainError.message}`
-                });
-            }
-        }
-        
-        res.status(500).json({ 
-            success: false, 
-            message: `Verification failed: ${error.message}`,
-            errorCode: error.code 
-        });
+        console.error("Verification/Blockchain Error:", error);
+        res.status(500).json({ success: false, message: "Verification failed", error: error.message });
     }
 });
 
-// 3. Verify Biometric (Face Recognition with Database Comparison)
+// 3. Verify Biometric
 app.post('/verify-biometric', async (req, res) => {
     const { employeeId, faceDescriptor } = req.body;
 
@@ -277,16 +275,14 @@ app.post('/verify-biometric', async (req, res) => {
     }
 
     try {
-        // Scenario A: First Time Registration (No face data stored)
+        // Scenario A: Registration
         if (!employee.faceDescriptor || employee.faceDescriptor === null) {
             employee.faceDescriptor = faceDescriptor;
-            
-            // Persist to JSON file
+
+            // Persist
             const filePath = path.join(__dirname, 'data', 'employees.json');
             fs.writeFileSync(filePath, JSON.stringify(employees, null, 4));
-            
-            console.log(`[Face Registration] Registered face for employee ${employeeId}`);
-            
+
             return res.status(200).json({
                 success: true,
                 message: 'Face registered successfully!',
@@ -295,41 +291,34 @@ app.post('/verify-biometric', async (req, res) => {
             });
         }
 
-        // Scenario B: Verification (Compare with stored face)
-        const storedDescriptor = employee.faceDescriptor;
-        const distance = getEuclideanDistance(storedDescriptor, faceDescriptor);
-        
-        console.log(`[Face Verification] Employee ${employeeId} - Distance: ${distance.toFixed(4)}`);
+        // Scenario B: Verification
+        const distance = getEuclideanDistance(employee.faceDescriptor, faceDescriptor);
+        console.log(`[Face Verification] ${employeeId} - Distance: ${distance.toFixed(4)}`);
 
-        const THRESHOLD = 0.5; // Lower = stricter matching
-        
+        const THRESHOLD = 0.5;
+
         if (distance < THRESHOLD) {
-            // Face matches!
             return res.status(200).json({
                 success: true,
-                message: `Face verified! Match confidence: ${((1 - distance) * 100).toFixed(1)}%`,
+                message: `Face verified! Match: ${((1 - distance) * 100).toFixed(1)}%`,
                 employeeName: employee.name,
                 distance: distance.toFixed(4),
                 isRegistration: false
             });
         } else {
-            // Face does not match
             return res.status(403).json({
                 success: false,
-                message: 'Face does not match records. Please try again or contact admin.',
+                message: 'Face does not match records.',
                 distance: distance.toFixed(4)
             });
         }
     } catch (error) {
-        console.error('Error in biometric verification:', error);
-        return res.status(500).json({ 
-            success: false, 
-            message: `Biometric verification failed: ${error.message}` 
-        });
+        console.error('Biometric Error:', error);
+        res.status(500).json({ success: false, message: `Biometric failed: ${error.message}` });
     }
 });
 
-// 4. GET Employee lookup (for frontend to check if ID exists)
+// 4. Employee Lookup
 app.get('/employee/:id', (req, res) => {
     const employee = findEmployee(req.params.id);
     if (!employee) {
@@ -346,102 +335,42 @@ app.get('/employee/:id', (req, res) => {
     });
 });
 
-// 5. POST Register New Employee
-app.post('/register-employee', async (req, res) => {
-    const { employeeId, name, phone, faceDescriptor } = req.body;
-
-    if (!employeeId || !name || !phone || !faceDescriptor) {
-        return res.status(400).json({ 
-            success: false, 
-            message: 'All fields are required: employeeId, name, phone, faceDescriptor' 
-        });
-    }
-
-    // Check if employee ID already exists
-    const existingEmployee = findEmployee(employeeId);
-    if (existingEmployee) {
-        return res.status(409).json({ 
-            success: false, 
-            message: `Employee ID ${employeeId} already exists` 
-        });
-    }
-
-    try {
-        // Create new employee object
-        const newEmployee = {
-            employeeId: employeeId.trim().toUpperCase(),
-            name: name.trim(),
-            phone: phone.trim(),
-            wallet: null,
-            faceDescriptor: faceDescriptor
-        };
-
-        // Add to employees array
-        employees.push(newEmployee);
-
-        // Persist to JSON file
-        const filePath = path.join(__dirname, 'data', 'employees.json');
-        fs.writeFileSync(filePath, JSON.stringify(employees, null, 4));
-
-        console.log(`[Employee Registration] New employee registered: ${employeeId} - ${name}`);
-
-        res.status(201).json({
-            success: true,
-            message: 'Employee registered successfully',
-            employeeId: newEmployee.employeeId,
-            name: newEmployee.name
-        });
-    } catch (error) {
-        console.error('Error registering employee:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: `Registration failed: ${error.message}` 
-        });
-    }
-});
-
-// 6. GET Live Results Snapshot
+// 5. Results (Proxy for ElectionManager)
 app.get('/results/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        const proposal = await governanceContract.getProposal(id);
-        const proposalState = await governanceContract.state(id);
+        const election = await electionManager.getElection(id);
 
-        const stateLabels = ["Pending", "Active", "Succeeded", "Defeated", "Executed", "Cancelled"];
+        let inferredState = "Unknown";
+        if (election.isActive) inferredState = "Active";
+        else if (election.resultsPublished) inferredState = "Finalized";
+        else inferredState = "Pending";
 
         res.status(200).json({
             success: true,
             data: {
                 id: id,
-                proposer: proposal.proposer,
-                description: proposal.description,
-                forVotes: proposal.forVotes.toString(),
-                againstVotes: proposal.againstVotes.toString(),
-                startTime: proposal.startTime.toString(),
-                endTime: proposal.endTime.toString(),
-                executed: proposal.executed,
-                cancelled: proposal.cancelled,
-                state: stateLabels[proposalState] || "Unknown"
+                position: election.position,
+                startTime: election.startTime.toString(),
+                endTime: election.endTime.toString(),
+                totalVotes: election.totalVotes.toString(),
+                candidateCount: election.candidateCount.toString(),
+                state: inferredState,
+                resultsPublished: election.resultsPublished
             }
         });
     } catch (error) {
         console.error('Error fetching results:', error);
-        res.status(500).json({ success: false, message: "Proposal not found or contract error" });
+        res.status(500).json({ success: false, message: "Election not found" });
     }
 });
 
-// 7. GET Analytics - Voter Registry and Statistics
+// 6. Analytics
 app.get('/analytics/voters', (req, res) => {
     try {
         const totalEmployees = employees.length;
-        const verifiedCount = employees.filter(e => e.wallet !== null).length;
-        
-        const registry = employees.map(e => ({
-            employeeId: e.employeeId,
-            name: e.name,
-            isVerified: e.wallet !== null,
-            hasFaceData: e.faceDescriptor !== null
-        }));
+        // Mock verification count based on some criteria, or just total in DB
+        const verifiedCount = employees.filter(e => e.faceDescriptor).length;
 
         res.status(200).json({
             success: true,
@@ -449,28 +378,15 @@ app.get('/analytics/voters', (req, res) => {
                 totalEmployees,
                 verifiedCount,
                 unverifiedCount: totalEmployees - verifiedCount,
-                verificationRate: totalEmployees > 0 ? ((verifiedCount / totalEmployees) * 100).toFixed(1) : 0,
-                registry
+                verificationRate: totalEmployees > 0 ? ((verifiedCount / totalEmployees) * 100).toFixed(1) : 0
             }
         });
     } catch (error) {
-        console.error('Error fetching voter analytics:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: `Analytics error: ${error.message}` 
-        });
+        res.status(500).json({ success: false, message: error.message });
     }
 });
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`Oracle & Streaming server running on port ${PORT}`);
-    console.log(`Loaded ${employees.length} employees from mock database`);
-
-    // Environment Check
-    if (!process.env.RPC_URL || !process.env.ADMIN_PRIVATE_KEY || !process.env.GOVERNANCE_CONTRACT_ADDRESS) {
-        console.error("❌ MISSING ENV VARIABLES: Check RPC_URL, ADMIN_PRIVATE_KEY, and GOVERNANCE_CONTRACT_ADDRESS");
-    } else {
-        console.log("✅ Blockchain configuration loaded");
-    }
+    console.log(`Backend server running on port ${PORT}`);
 });

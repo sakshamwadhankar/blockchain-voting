@@ -11,17 +11,19 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [isVerified, setIsVerified] = useState(false); // Track if employee completed verification
+    const [voterToken, setVoterTokenState] = useState(null);
 
     // Check if user is already logged in (from localStorage)
     useEffect(() => {
         const savedUser = localStorage.getItem("authUser");
         const savedVerified = localStorage.getItem("isVerified");
+        const savedToken = localStorage.getItem("voterToken");
         if (savedUser) {
             setUser(JSON.parse(savedUser));
             setIsVerified(savedVerified === "true");
+        }
+        if (savedToken) {
+            setVoterTokenState(savedToken);
         }
         setLoading(false);
     }, []);
@@ -46,16 +48,22 @@ export function AuthProvider({ children }) {
         localStorage.setItem("isVerified", "true");
     };
 
-    const markAsVerified = () => {
+    const markAsVerified = (token = null) => {
         setIsVerified(true);
         localStorage.setItem("isVerified", "true");
+        if (token) {
+            setVoterTokenState(token);
+            localStorage.setItem("voterToken", token);
+        }
     };
 
     const logout = () => {
         setUser(null);
         setIsVerified(false);
+        setVoterTokenState(null);
         localStorage.removeItem("authUser");
         localStorage.removeItem("isVerified");
+        localStorage.removeItem("voterToken");
     };
 
     const isAdmin = () => user?.type === "admin";
@@ -74,7 +82,8 @@ export function AuthProvider({ children }) {
                 logout,
                 isAdmin,
                 isEmployee,
-                isAuthenticated
+                isAuthenticated,
+                voterToken // Expose voterToken
             }}
         >
             {children}
