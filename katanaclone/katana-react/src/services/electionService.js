@@ -47,41 +47,24 @@ class ElectionService {
   // ═══════════════════════════════════════════════════════════════════════════
 
   async createElection(position, durationInDays) {
-    try {
-      const tx = await this.contract.createElection(position, durationInDays);
-      const receipt = await tx.wait();
-
-      // Extract election ID from event
-      const event = receipt.logs.find(log => {
-        try {
-          const parsed = this.contract.interface.parseLog(log);
-          return parsed && parsed.name === "ElectionCreated";
-        } catch {
-          return false;
-        }
-      });
-
-      if (event) {
-        try {
-          const parsed = this.contract.interface.parseLog(event);
-          const electionId = parsed.args.electionId || parsed.args[0];
-          return electionId ? Number(electionId) : 0;
-        } catch (error) {
-          console.error("Error parsing event:", error);
-        }
-      }
-
-      // Fallback: get the next election ID from contract
+    const tx = await this.contract.createElection(position, durationInDays);
+    const receipt = await tx.wait();
+    
+    // Extract election ID from event
+    const event = receipt.logs.find(log => {
       try {
-        const nextId = await this.contract.nextElectionId();
-        return Number(nextId) - 1; // Return the ID that was just created
+        return this.contract.interface.parseLog(log).name === "ElectionCreated";
       } catch {
-        return 0;
+        return false;
       }
-    } catch (error) {
-      console.error("Error creating election:", error);
-      throw error;
+    });
+    
+    if (event) {
+      const parsed = this.contract.interface.parseLog(event);
+      return parsed.args.electionId;
     }
+    
+    return null;
   }
 
   async addCandidate(electionId, name, employeeId, department, manifestoIPFS) {
@@ -116,21 +99,11 @@ class ElectionService {
     // Hash the corporate ID for privacy
     const corporateIdHash = ethers.keccak256(ethers.toUtf8Bytes(corporateId));
     
-    // Convert voterToken to bytes32 format
-    // If it's already a hex string starting with 0x, use it directly
-    // Otherwise, hash it to get a proper bytes32 value
-    let voterTokenBytes32;
-    if (typeof voterToken === 'string' && voterToken.startsWith('0x') && voterToken.length === 66) {
-      voterTokenBytes32 = voterToken;
-    } else {
-      voterTokenBytes32 = ethers.keccak256(ethers.toUtf8Bytes(voterToken));
-    }
-
     const tx = await this.contract.castVote(
       electionId,
       candidateId,
       corporateIdHash,
-      voterTokenBytes32
+      voterToken
     );
     await tx.wait();
     return tx.hash;
@@ -167,34 +140,14 @@ class ElectionService {
 
   async getAllCandidates(electionId) {
     const election = await this.getElection(electionId);
-
-    // Helper for timeout
-    const withTimeout = (promise, ms = 5000) => {
-      return Promise.race([
-        promise,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms))
-      ]);
-    };
-
-    // Create array of promises for parallel execution
-    const promises = [];
+    const candidates = [];
+    
     for (let i = 0; i < election.candidateCount; i++) {
-      // Wrap each candidate fetch in timeout and catch errors individually
-      promises.push(
-        withTimeout(this.getCandidate(electionId, i))
-          .then(c => ({ ...c, id: i }))
-          .catch(e => {
-            console.error(`Failed to load candidate ${i}`, e);
-            return null; // Return null on failure instead of crashing
-          })
-      );
+      const candidate = await this.getCandidate(electionId, i);
+      candidates.push({ ...candidate, id: i });
     }
-
-    // faster: fetch all at once
-    const results = await Promise.all(promises);
-
-    // Filter out failed (null) candidates
-    return results.filter(c => c !== null);
+    
+    return candidates;
   }
 
   async getWinningCandidate(electionId) {
@@ -211,7 +164,7 @@ class ElectionService {
     const length = await this.contract.getAuditTrailLength();
     const totalRecords = Number(length);
     const records = [];
-
+    
     const start = Math.max(0, totalRecords - limit);
     for (let i = start; i < totalRecords; i++) {
       const record = await this.contract.getAuditRecord(i);
@@ -222,7 +175,7 @@ class ElectionService {
         verified: record[3]
       });
     }
-
+    
     return records.reverse(); // Most recent first
   }
 

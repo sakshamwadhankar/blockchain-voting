@@ -1,17 +1,27 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
-import { ethers } from 'ethers'
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import { useWallet } from '../context/WalletContext'
-import { STATE_LABELS, STATE_COLORS } from '../config/contracts'
+import ElectionService from '../services/electionService'
+import FirebaseService from '../services/firebaseService'
+import { GOVERNANCE_ADDRESS } from '../config/contracts'
 import SectionParticles from '../components/SectionParticles'
 import StarField from '../components/StarField'
 
+const electionService = new ElectionService(GOVERNANCE_ADDRESS)
+
 export default function VotePage() {
-    const { account, governance } = useWallet()
-    const [proposals, setProposals] = useState([])
+    const { user, isVerified, voterToken } = useAuth()
+    const { account } = useWallet()
+    const navigate = useNavigate()
+
+    const [elections, setElections] = useState([])
     const [loading, setLoading] = useState(true)
-    const [voting, setVoting] = useState(null)
-    const [txStatus, setTxStatus] = useState({ type: '', message: '' })
+    const [error, setError] = useState(null)
+    const [selectedElection, setSelectedElection] = useState(null)
+    const [candidates, setCandidates] = useState([])
+    const [castingVote, setCastingVote] = useState(false)
+    const [voteStatus, setVoteStatus] = useState(null)
 
     const fetchProposals = useCallback(async () => {
         if (!governance) return

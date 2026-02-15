@@ -49,41 +49,23 @@ export default function UnifiedAdminPanel() {
     };
 
     const loadElections = async (service) => {
-        if (!service) {
-            console.log("Service not initialized");
-            return;
-        }
+        if (!service) return;
         try {
-            console.log("Loading elections...");
             const total = await service.getTotalElections();
-            console.log("Total elections:", total);
             const electionList = [];
 
             for (let i = 0; i < total; i++) {
                 const election = await service.getElection(i);
-                console.log(`Election ${i}:`, election);
+                // Try to fetch metadata from Firebase
+                const metadata = await firebaseService.getElectionMetadata(i);
 
-                // Try to fetch metadata from Firebase (skip if Firebase not configured)
-                let metadata = {};
-                try {
-                    metadata = await firebaseService.getElectionMetadata(i);
-                } catch (fbError) {
-                    console.log("Firebase metadata not available for election", i);
-                }
-
-                const electionData = {
+                electionList.push({
                     id: i,
                     ...election,
                     ...metadata // Merge blockchain data with Firebase metadata
-                };
-
-                // Only add if not deleted
-                if (!electionData.isDeleted) {
-                    electionList.push(electionData);
-                }
+                });
             }
 
-            console.log("Final election list:", electionList);
             setElections(electionList);
         } catch (error) {
             console.error("Load elections error:", error);
@@ -106,40 +88,13 @@ export default function UnifiedAdminPanel() {
             setMessage({ type: "info", text: "1/3: Creating election on blockchain..." });
             const electionId = await electionService.createElection(position, parseInt(duration));
 
-            // Step 2: Upload banner to Firebase Storage (if provided as file)
+            // Step 2: Upload banner to Firebase Storage (if provided)
             let bannerUrl = "";
             if (bannerFile) {
-                if (typeof bannerFile === 'string') {
-                    // User provided a URL directly
-                    bannerUrl = bannerFile;
-                } else {
-                    // Upload file with timeout - don't block election creation
-                    setMessage({ type: "info", text: "2/3: Uploading banner image..." });
-                    try {
-                        const uploadPromise = (async () => {
-                            const storageRef = ref(storage, `election_banners/${electionId}/${bannerFile.name}-${Date.now()}`);
-                            await uploadBytes(storageRef, bannerFile);
-                            return await getDownloadURL(storageRef);
-                        })();
-                        const timeoutPromise = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error("Upload timed out")), 15000)
-                        );
-                        bannerUrl = await Promise.race([uploadPromise, timeoutPromise]);
-                    } catch (uploadErr) {
-                        console.warn("Banner upload failed, skipping:", uploadErr.message);
-                        // Convert to data URL as fallback
-                        try {
-                            bannerUrl = await new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result);
-                                reader.readAsDataURL(bannerFile);
-                            });
-                        } catch {
-                            bannerUrl = "";
-                        }
-                        setMessage({ type: "info", text: "2/3: Banner upload skipped, continuing..." });
-                    }
-                }
+                setMessage({ type: "info", text: "2/3: Uploading banner image..." });
+                const storageRef = ref(storage, `election_banners/${electionId}/${bannerFile.name}-${Date.now()}`);
+                await uploadBytes(storageRef, bannerFile);
+                bannerUrl = await getDownloadURL(storageRef);
             }
 
             // Step 3: Save metadata to Firestore
@@ -149,7 +104,7 @@ export default function UnifiedAdminPanel() {
             endDate.setDate(endDate.getDate() + parseInt(duration));
 
             await firebaseService.createElectionMetadata({
-                electionId: typeof electionId === 'bigint' ? Number(electionId) : electionId, // ensure number
+                electionId,
                 title: position,
                 description,
                 bannerUrl,
@@ -160,7 +115,7 @@ export default function UnifiedAdminPanel() {
 
             setMessage({
                 type: "success",
-                text: `Election created successfully! ID: ${electionId !== null ? electionId : 'Unknown'}`
+                text: `Election created successfully! ID: ${electionId}`
             });
 
             // Reset form
@@ -169,12 +124,7 @@ export default function UnifiedAdminPanel() {
             setDescription("");
             setRules("");
             setBannerFile(null);
-
-            // Reload elections list
             await loadElections(electionService);
-
-            // Switch to Add Candidates tab
-            setActiveTab("candidates");
 
         } catch (error) {
             console.error("Create election error:", error);
@@ -199,22 +149,18 @@ export default function UnifiedAdminPanel() {
         setMessage({ type: "", text: "Initializing candidate addition..." });
 
         try {
-            // Step 1: Upload photo to Firebase Storage (if provided)
+            // Step 1: Upload photo to Firebase Storage
             let photoUrl = "";
             if (photoFile) {
-                if (typeof photoFile === 'string') {
-                    photoUrl = photoFile;
-                } else {
-                    setMessage({ type: "info", text: "1/4: Uploading candidate photo..." });
-                    photoUrl = await firebaseService.uploadCandidatePhoto(
-                        selectedElection,
-                        employeeId,
-                        photoFile
-                    );
-                }
+                setMessage({ type: "info", text: "1/4: Uploading candidate photo..." });
+                photoUrl = await firebaseService.uploadCandidatePhoto(
+                    selectedElection,
+                    employeeId,
+                    photoFile
+                );
             }
 
-            // Step 2: Upload manifesto to Firebase Storage (if provided)
+            // Step 2: Upload manifesto to Firebase Storage
             let manifestoUrl = "";
             if (manifestoFile) {
                 setMessage({ type: "info", text: "2/4: Uploading manifesto..." });
@@ -232,15 +178,17 @@ export default function UnifiedAdminPanel() {
                 candidateName,
                 employeeId,
                 department,
-                manifestoUrl || "" // Store URL on blockchain as the "manifesto IPFS hash/URL"
+                manifestoUrl // Store URL on blockchain as the "manifesto IPFS hash/URL"
             );
 
             // Step 4: Save candidate profile to Firestore
             setMessage({ type: "info", text: "4/4: Saving candidate profile..." });
-            // Fetch updated election to get the new candidate count -> calculate ID
+            // We need to know the candidate ID. Since blockchain IDs are sequential 0,1,2...
+            // and we just added one, we can infer it or we might need to fetch it.
+            // For simplicity, we'll assume it's the next index based on current count.
+            // A safer way is to read the latest candidate count from chain.
             const updatedElection = await electionService.getElection(parseInt(selectedElection));
-            // candidateCount is now N. The new candidate has index N-1.
-            const candidateId = Number(updatedElection.candidateCount) - 1;
+            const candidateId = Number(updatedElection.candidateCount) - 1; // ID is 0-indexed
 
             await firebaseService.saveCandidateProfile(selectedElection, {
                 candidateId,
@@ -342,8 +290,8 @@ export default function UnifiedAdminPanel() {
                     <button
                         onClick={() => setActiveTab("create")}
                         className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${activeTab === "create"
-                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
-                            : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
+                                : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
                             }`}
                     >
                         <span>🗳️</span> Create Election
@@ -351,8 +299,8 @@ export default function UnifiedAdminPanel() {
                     <button
                         onClick={() => setActiveTab("candidates")}
                         className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${activeTab === "candidates"
-                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
-                            : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
+                                : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
                             }`}
                     >
                         <span>👥</span> Add Candidates
@@ -363,8 +311,8 @@ export default function UnifiedAdminPanel() {
                             if (electionService) loadElections(electionService);
                         }}
                         className={`px-6 py-3 rounded-lg font-semibold transition-all duration-300 whitespace-nowrap flex items-center gap-2 ${activeTab === "manage"
-                            ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
-                            : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
+                                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/25 translate-y-[-2px]"
+                                : "bg-slate-800/50 text-slate-400 hover:bg-slate-800 hover:text-white border border-slate-700/50"
                             }`}
                     >
                         <span>📊</span> Manage Elections
@@ -416,15 +364,7 @@ export default function UnifiedAdminPanel() {
                                     </div>
 
                                     <div>
-                                        <label className="block text-slate-300 font-medium mb-2">Banner Image URL</label>
-                                        <input
-                                            type="text"
-                                            value={bannerFile && typeof bannerFile === 'string' ? bannerFile : ''}
-                                            onChange={(e) => setBannerFile(e.target.value)}
-                                            placeholder="https://example.com/banner.jpg"
-                                            className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all mb-2"
-                                        />
-                                        <label className="block text-xs text-slate-500 mb-2">OR Upload Image</label>
+                                        <label className="block text-slate-300 font-medium mb-2">Banner Image</label>
                                         <div className="relative group">
                                             <input
                                                 type="file"
@@ -435,17 +375,18 @@ export default function UnifiedAdminPanel() {
                                             />
                                             <label
                                                 htmlFor="banner-upload"
-                                                className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-indigo-500 hover:bg-slate-700/30 transition-all"
+                                                className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-indigo-500 hover:bg-slate-700/30 transition-all"
                                             >
-                                                {bannerFile && typeof bannerFile !== 'string' ? (
+                                                {bannerFile ? (
                                                     <div className="text-center">
                                                         <span className="text-indigo-400 font-medium">{bannerFile.name}</span>
                                                         <p className="text-slate-500 text-xs mt-1">Click to change</p>
                                                     </div>
                                                 ) : (
                                                     <div className="text-center text-slate-400 group-hover:text-indigo-300">
-                                                        <span className="text-xl mb-1 block">🖼️</span>
-                                                        <span className="text-xs font-medium">Click to upload file</span>
+                                                        <span className="text-2xl mb-2 block">🖼️</span>
+                                                        <span className="text-sm font-medium">Click to upload banner</span>
+                                                        <p className="text-xs mt-1 opacity-70">PNG, JPG up to 5MB</p>
                                                     </div>
                                                 )}
                                             </label>
@@ -574,15 +515,7 @@ export default function UnifiedAdminPanel() {
 
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-slate-300 font-medium mb-2">Photo URL</label>
-                                            <input
-                                                type="text"
-                                                value={photoFile && typeof photoFile === 'string' ? photoFile : ''}
-                                                onChange={(e) => setPhotoFile(e.target.value)}
-                                                placeholder="https://example.com/photo.jpg"
-                                                className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all mb-2"
-                                            />
-                                            <label className="block text-xs text-slate-500 mb-2">OR Upload Photo</label>
+                                            <label className="block text-slate-300 font-medium mb-2">Photo</label>
                                             <input
                                                 type="file"
                                                 accept="image/*"
@@ -657,12 +590,12 @@ export default function UnifiedAdminPanel() {
 
                                                 <div className="flex items-center gap-6 text-sm text-slate-400 bg-slate-800/50 px-4 py-2 rounded-lg">
                                                     <div className="flex flex-col items-center">
-                                                        <span className="font-bold text-white">{election.candidateCount ? election.candidateCount.toString() : '0'}</span>
+                                                        <span className="font-bold text-white">{election.candidateCount.toString()}</span>
                                                         <span className="text-[10px] uppercase tracking-wider">Candidates</span>
                                                     </div>
                                                     <div className="w-px h-8 bg-slate-700"></div>
                                                     <div className="flex flex-col items-center">
-                                                        <span className="font-bold text-white">{election.totalVotes ? election.totalVotes.toString() : '0'}</span>
+                                                        <span className="font-bold text-white">{election.totalVotes.toString()}</span>
                                                         <span className="text-[10px] uppercase tracking-wider">Votes</span>
                                                     </div>
                                                 </div>
@@ -694,16 +627,6 @@ export default function UnifiedAdminPanel() {
                                                     Results Published
                                                 </div>
                                             )}
-
-                                            <div className="mt-4 pt-4 border-t border-slate-800 flex justify-end">
-                                                <button
-                                                    onClick={() => handleDeleteElection(election.id)}
-                                                    disabled={loading}
-                                                    className="text-red-400 hover:text-red-300 text-sm font-medium hover:underline flex items-center gap-1 transition-colors"
-                                                >
-                                                    <span>🗑️ Delete Election</span>
-                                                </button>
-                                            </div>
                                         </div>
                                     );
                                 })}
@@ -725,10 +648,10 @@ export default function UnifiedAdminPanel() {
                 {/* Global Message Toast/Alert */}
                 {message.text && (
                     <div className={`fixed bottom-6 right-6 max-w-md w-full p-4 rounded-xl shadow-2xl border backdrop-blur-md animate-slide-in-right z-50 flex items-start gap-3 ${message.type === "success"
-                        ? "bg-green-500/10 border-green-500/50 text-green-200"
-                        : message.type === "error"
-                            ? "bg-red-500/10 border-red-500/50 text-red-200"
-                            : "bg-blue-500/10 border-blue-500/50 text-blue-200"
+                            ? "bg-green-500/10 border-green-500/50 text-green-200"
+                            : message.type === "error"
+                                ? "bg-red-500/10 border-red-500/50 text-red-200"
+                                : "bg-blue-500/10 border-blue-500/50 text-blue-200"
                         }`}>
                         <div className="text-xl">
                             {message.type === "success" && "✅"}
@@ -743,6 +666,6 @@ export default function UnifiedAdminPanel() {
                 )}
 
             </div>
-        </div >
+        </div>
     );
 }

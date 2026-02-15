@@ -137,15 +137,10 @@ class FirebaseService {
       endDate
     } = electionData;
 
-    // Ensure electionId is valid
-    if (electionId === null || electionId === undefined) {
-      throw new Error("Invalid election ID");
-    }
-
-    const electionRef = doc(db, 'elections_metadata', String(electionId));
+    const electionRef = doc(db, 'elections_metadata', electionId.toString());
 
     await setDoc(electionRef, {
-      electionId: Number(electionId),
+      electionId,
       title,
       description,
       bannerUrl,
@@ -182,14 +177,6 @@ class FirebaseService {
       id: doc.id,
       ...doc.data()
     }));
-  }
-
-  /**
-   * Soft delete election metadata
-   */
-  async deleteElectionMetadata(electionId) {
-    const electionRef = doc(db, 'elections_metadata', electionId.toString());
-    await setDoc(electionRef, { isDeleted: true }, { merge: true });
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

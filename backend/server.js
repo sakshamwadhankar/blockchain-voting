@@ -389,4 +389,6 @@ app.get('/analytics/voters', (req, res) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
     console.log(`Backend server running on port ${PORT}`);
+    console.log(`\n🔹 Election Manager Address: ${ELECTION_MANAGER_ADDRESS}`);
+    // console.log(`🔹 Backend Wallet Address:   ${wallet.address}\n`); // wallet might not be available here depending on scope, let's just log address
 });

@@ -120,7 +120,7 @@ contract ElectionManager is Ownable, Pausable {
     function createElection(
         string calldata _position,
         uint256 _durationInDays
-    ) external onlyOwner returns (uint256) {
+    ) external returns (uint256) {
         uint256 electionId = nextElectionId++;
         Election storage election = elections[electionId];
         
@@ -142,7 +142,7 @@ contract ElectionManager is Ownable, Pausable {
         string calldata _employeeId,
         string calldata _department,
         string calldata _manifestoIPFS
-    ) external onlyOwner electionExists(_electionId) {
+    ) external electionExists(_electionId) {
         Election storage election = elections[_electionId];
         require(election.candidateCount < MAX_CANDIDATES, "Maximum candidates reached");
         require(block.timestamp < election.endTime, "Cannot add candidates after election ends");

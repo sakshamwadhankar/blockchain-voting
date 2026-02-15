@@ -1,30 +1,37 @@
 @import "tailwindcss";
 
-/* ── Custom Design Tokens ────────────────────────────────── */
+/* ── Kwote-Inspired Design Tokens ────────────────────────── */
 :root {
-  --primary: #6366f1;
-  --primary-hover: #818cf8;
-  --accent: #22d3ee;
-  --success: #34d399;
-  --danger: #f87171;
-  --warning: #fbbf24;
-  --bg-base: #0f172a;
-  --bg-card: #1e293b;
-  --bg-surface: #334155;
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --border: #475569;
+  --primary: #EEFF00;
+  --primary-hover: #f5ff33;
+  --accent: #EEFF00;
+  --success: #10b981;
+  --danger: #ef4444;
+  --warning: #EEFF00;
+  --bg-base: #0f1419;
+  --bg-card: #1a1f2e;
+  --bg-surface: #252b3b;
+  --text-primary: #ffffff;
+  --text-secondary: #8b92a8;
+  --border: #2a3142;
+  --yellow: #EEFF00;
+  --navy: #0f1419;
 }
 
 /* ── Global Resets ───────────────────────────────────────── */
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg-base);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #0f1419;
+  background-image: 
+    radial-gradient(circle at 20% 50%, rgba(238, 255, 0, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(238, 255, 0, 0.03) 0%, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ── Scrollbar ───────────────────────────────────────────── */
@@ -34,10 +41,40 @@ body {
 
 /* ── Glass Card ──────────────────────────────────────────── */
 .glass {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(99, 102, 241, 0.15);
+  background: rgba(26, 31, 46, 0.8);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(238, 255, 0, 0.15);
   border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Gradient Text ───────────────────────────────────────── */
+.gradient-text {
+  color: #EEFF00;
+  text-shadow: 0 0 30px rgba(238, 255, 0, 0.3);
+}
+
+/* ── Yellow Glow ─────────────────────────────────────────── */
+.yellow-glow {
+  box-shadow: 0 0 20px rgba(238, 255, 0, 0.3);
+}
+
+/* ── Gradient Border ─────────────────────────────────────── */
+.gradient-border {
+  position: relative;
+  background: var(--bg-card);
+  border-radius: 16px;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 2px;
+  background: linear-gradient(135deg, #EEFF00, #EEFF00);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
 }
 
 /* ── Animations ──────────────────────────────────────────── */
@@ -50,10 +87,36 @@ body {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 12px rgba(99, 102, 241, 0.25); }
-  50%      { box-shadow: 0 0 24px rgba(99, 102, 241, 0.5); }
+  0%, 100% { box-shadow: 0 0 20px rgba(238, 255, 0, 0.4); }
+  50%      { box-shadow: 0 0 40px rgba(238, 255, 0, 0.6); }
 }
 .pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+
+@keyframes gradient-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+/* ── Yellow Button ───────────────────────────────────────── */
+.btn-yellow {
+  background: #EEFF00;
+  color: #0f1419;
+  font-weight: 700;
+  transition: all 0.3s ease;
+}
+.btn-yellow:hover {
+  background: #f5ff33;
+  box-shadow: 0 0 30px rgba(238, 255, 0, 0.5);
+  transform: translateY(-2px);
+}
+.btn-yellow:disabled {
+  background: #4a4d3d;
+  color: #8b8d7a;
+}
 
 @keyframes slideIn {
   from { opacity: 0; transform: translateX(24px); }

@@ -1,10 +1,16 @@
-import AnimatedHeadline from './AnimatedHeadline'
+import { useState } from 'react';
+import AnimatedHeadline from './AnimatedHeadline';
+import VotingOverlay from './VotingOverlay';
 
 export default function Hero() {
+    const [isVotingOpen, setIsVotingOpen] = useState(false);
+
     return (
         <section className="hero" id="hero">
-            <div className="hero-container">
-                <h1 className="hero-title" style={{ 
+            <VotingOverlay isOpen={isVotingOpen} onClose={() => setIsVotingOpen(false)} />
+
+            <div className="hero-container" style={{ zIndex: 10, position: 'relative', pointerEvents: 'auto' }}>
+                <h1 className="hero-title" style={{
                     color: '#F6FF0D',
                     fontFamily: "'OTJubilee Diamond', sans-serif",
                     fontSize: 'clamp(80px, 18vw, 240px)',
@@ -24,9 +30,13 @@ export default function Hero() {
                     blockchain meets biometric authentication — every vote verified, every result immutable.
                 </p>
                 <div className="hero-cta">
-                    <a
+                    <button
                         className="btn btn--important"
-                        href="#features-section"
+                        type="button"
+                        onClick={() => {
+                            console.log("Button clicked!");
+                            setIsVotingOpen(true);
+                        }}
                     >
                         <span className="btn-inner">
                             <span className="btn-icon">
@@ -46,7 +56,7 @@ export default function Hero() {
                                 </svg>
                             </span>
                         </span>
-                    </a>
+                    </button>
                 </div>
             </div>
 

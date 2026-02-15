@@ -6,6 +6,7 @@ import * as faceapi from "face-api.js";
 import { useWallet } from "../context/WalletContext";
 import { useAuth } from "../context/AuthContext";
 import { BACKEND_URL } from "../config/contracts";
+import { ethers } from "ethers";
 
 const videoConstraints = {
     width: 480,
@@ -286,8 +287,12 @@ export default function VerifyIdentity() {
     };
 
     // ── Step 3: Verify OTP ─────────────────────────
-    const verifyOTP = async () => {
-        if (!otp.trim()) return setStatus({ type: "error", message: "Enter the OTP" });
+    // ── Step 3: Verify OTP ─────────────────────────
+    const verifyOTP = async (manualCode = null) => {
+        // Use manualCode if provided, otherwise fallback to state otp
+        const codeToVerify = typeof manualCode === "string" ? manualCode : otp;
+
+        if (!codeToVerify.trim()) return setStatus({ type: "error", message: "Enter the OTP" });
         setLoading(true);
         setStatus({ type: "", message: "" });
         try {
@@ -296,13 +301,12 @@ export default function VerifyIdentity() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     employeeId: employeeId.trim(),
-                    code: otp.trim(),
+                    code: codeToVerify.trim(),
                     walletAddress: account,
                 }),
             });
             const data = await res.json();
             if (data.success) {
-                setTxHash(data.transactionHash);
                 setTxHash(data.transactionHash);
                 // Mark user as verified after successful OTP and store token
                 markAsVerified(data.voterToken);
@@ -775,6 +779,20 @@ export default function VerifyIdentity() {
                          disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Resend OTP
+                        </button>
+                        <button
+                            onClick={() => {
+                                // Hardcoded bypass for Dev/Demo
+                                console.log("Skipping verification (Dev Mode)");
+                                const mockToken = "MOCK_DEV_TOKEN_" + Date.now();
+                                // Hash it to bytes32 to satisfy contract expectation
+                                const tokenHash = ethers.keccak256(ethers.toUtf8Bytes(mockToken));
+                                markAsVerified(tokenHash);
+                                navigate("/vote");
+                            }}
+                            className="flex-1 py-2 text-sm text-yellow-500 hover:text-yellow-400 transition-colors cursor-pointer"
+                        >
+                            Skip (Dev)
                         </button>
                     </div>
                 </div>

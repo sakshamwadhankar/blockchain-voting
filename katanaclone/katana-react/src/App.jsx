@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
-import Header from './components/Header'
+// Header removed as per requirement
 import Hero from './components/Hero'
 import Liquidity from './components/Liquidity'
 import Flywheel from './components/Flywheel'
@@ -15,10 +15,8 @@ import CustomCursor from './components/CustomCursor'
 import Scrollbar from './components/Scrollbar'
 import SectionTransition from './components/SectionTransition'
 
-import VerifyPage from './pages/VerifyPage'
-import VotePage from './pages/VotePage'
-import ResultsPage from './pages/ResultsPage'
-import AdminPage from './pages/AdminPage'
+// Pages removed as they are not used in Katanaclone anymore
+// Verification/Voting happens via the iframe overlay
 
 function HomePage() {
   return (
@@ -58,13 +56,9 @@ function App() {
     <>
       <StarField />
       <CustomCursor />
-      <Header />
+      {/* Header removed */}
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/verify" element={<VerifyPage />} />
-        <Route path="/vote" element={<VotePage />} />
-        <Route path="/results" element={<ResultsPage />} />
-        <Route path="/admin" element={<AdminPage />} />
       </Routes>
       <Scrollbar />
     </>

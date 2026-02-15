@@ -11,6 +11,9 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }) {
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [isVerified, setIsVerified] = useState(false);
     const [voterToken, setVoterTokenState] = useState(null);
 
     // Check if user is already logged in (from localStorage)

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 import ElectionService from "../services/electionService";
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+const COLORS = ["#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6", "#f97316"];
 
 export default function ElectionDashboard() {
   const [electionService, setElectionService] = useState(null);
@@ -32,7 +32,6 @@ export default function ElectionDashboard() {
 
   const initializeService = async () => {
     try {
-      // Load contract address from deployment
       const response = await fetch("/deployments/election-localhost.json");
       const deployment = await response.json();
       
@@ -86,7 +85,6 @@ export default function ElectionDashboard() {
           data
         }, ...prev.slice(0, 9)]);
         
-        // Refresh data
         loadElectionData();
       }
     });
@@ -99,175 +97,186 @@ export default function ElectionDashboard() {
     return { label: "Active", color: "bg-green-500" };
   };
 
-  const formatTime = (timestamp) => {
-    return new Date(timestamp * 1000).toLocaleString();
-  };
+  const currentElection = elections.find(e => e.id === selectedElection);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-        <div className="text-white text-xl">Loading Election System...</div>
+      <div className="min-h-screen bg-[#0f1419] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-[#EEFF00] border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-gray-400 text-lg">Loading election data...</p>
+        </div>
       </div>
     );
   }
 
-  const currentElection = elections.find(e => e.id === selectedElection);
-  const chartData = candidates.map(c => ({
-    name: c.name,
-    votes: c.voteCount,
-    department: c.department
-  }));
-
-  const pieData = candidates.map(c => ({
-    name: c.name,
-    value: c.voteCount
-  }));
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-6">
+    <div className="min-h-screen bg-[#0f1419] p-6">
       <div className="max-w-7xl mx-auto">
         
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">🗳️ Election Control Center</h1>
-          <p className="text-blue-200">Real-time blockchain-powered voting dashboard</p>
+        <div className="mb-12 text-center">
+          <h1 className="text-7xl font-bold mb-4 gradient-text" style={{ letterSpacing: '-0.02em' }}>
+            national election
+          </h1>
+          <p className="text-xl text-gray-400 font-light">
+            Live Results • Real-time Updates • Complete Transparency
+          </p>
         </div>
 
         {/* Election Selector */}
-        <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-          <label className="text-white font-semibold mb-3 block">Select Election</label>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {elections.map((election) => {
-              const status = getElectionStatus(election);
-              return (
-                <button
-                  key={election.id}
-                  onClick={() => setSelectedElection(election.id)}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    selectedElection === election.id
-                      ? "border-blue-400 bg-blue-500/30"
-                      : "border-white/20 bg-white/5 hover:bg-white/10"
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-white font-bold">{election.position}</span>
-                    <span className={`px-2 py-1 rounded text-xs ${status.color} text-white`}>
-                      {status.label}
-                    </span>
-                  </div>
-                  <div className="text-sm text-blue-200">
-                    {election.totalVotes} votes • {election.candidateCount} candidates
-                  </div>
-                </button>
-              );
-            })}
+        {elections.length > 0 && (
+          <div className="mb-8">
+            <div className="glass p-6">
+              <label className="block text-gray-300 text-sm font-medium mb-3">Select Election</label>
+              <select
+                value={selectedElection ?? ""}
+                onChange={(e) => setSelectedElection(parseInt(e.target.value))}
+                className="w-full bg-[#1a1f2e] border border-[#EEFF00]/30 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-[#EEFF00] transition-all"
+              >
+                {elections.map((election) => {
+                  const status = getElectionStatus(election);
+                  return (
+                    <option key={election.id} value={election.id} className="bg-[#13131a]">
+                      {election.position} - {status.label} ({election.totalVotes} votes)
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
           </div>
-        </div>
+        )}
 
         {currentElection && (
           <>
             {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl p-6 text-white">
-                <div className="text-3xl font-bold">{currentElection.totalVotes}</div>
-                <div className="text-blue-100">Total Votes Cast</div>
-              </div>
-              <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-xl p-6 text-white">
-                <div className="text-3xl font-bold">{currentElection.candidateCount}</div>
-                <div className="text-green-100">Candidates</div>
-              </div>
-              <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-6 text-white">
-                <div className="text-3xl font-bold">{auditTrail.length}</div>
-                <div className="text-purple-100">Audit Records</div>
-              </div>
-              <div className="bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl p-6 text-white">
-                <div className="text-3xl font-bold">
-                  {currentElection.resultsPublished ? "Published" : "Pending"}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <div className="glass p-6 hover:scale-105 transition-transform">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Total Votes</span>
+                  <span className="text-2xl">🗳️</span>
                 </div>
-                <div className="text-orange-100">Results Status</div>
+                <p className="text-4xl font-bold text-[#EEFF00]">{currentElection.totalVotes}</p>
+              </div>
+
+              <div className="glass p-6 hover:scale-105 transition-transform">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Candidates</span>
+                  <span className="text-2xl">👥</span>
+                </div>
+                <p className="text-4xl font-bold text-[#EEFF00]">{currentElection.candidateCount}</p>
+              </div>
+
+              <div className="glass p-6 hover:scale-105 transition-transform">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Status</span>
+                  <span className="text-2xl">📊</span>
+                </div>
+                <p className="text-2xl font-bold text-[#EEFF00]">{getElectionStatus(currentElection).label}</p>
+              </div>
+
+              <div className="glass p-6 hover:scale-105 transition-transform">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400 text-sm">Audit Records</span>
+                  <span className="text-2xl">🔒</span>
+                </div>
+                <p className="text-4xl font-bold text-[#EEFF00]">{auditTrail.length}</p>
               </div>
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
               {/* Bar Chart */}
-              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-                <h2 className="text-xl font-bold text-white mb-4">📊 Vote Distribution</h2>
+              <div className="glass p-6">
+                <h3 className="text-2xl font-bold text-white mb-6">Vote Distribution</h3>
                 <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff20" />
-                    <XAxis dataKey="name" stroke="#fff" />
-                    <YAxis stroke="#fff" />
+                  <BarChart data={candidates}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                    <XAxis dataKey="name" stroke="#a1a1aa" />
+                    <YAxis stroke="#a1a1aa" />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: "#1e293b", border: "1px solid #3b82f6" }}
-                      labelStyle={{ color: "#fff" }}
+                      contentStyle={{ 
+                        backgroundColor: '#1a1f2e', 
+                        border: '1px solid #EEFF00',
+                        borderRadius: '12px',
+                        color: '#fff'
+                      }} 
                     />
                     <Legend />
-                    <Bar dataKey="votes" fill="#3b82f6" />
+                    <Bar dataKey="voteCount" fill="#EEFF00" radius={[8, 8, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
 
               {/* Pie Chart */}
-              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-                <h2 className="text-xl font-bold text-white mb-4">🥧 Vote Share</h2>
+              <div className="glass p-6">
+                <h3 className="text-2xl font-bold text-white mb-6">Vote Share</h3>
                 <ResponsiveContainer width="100%" height={300}>
                   <PieChart>
                     <Pie
-                      data={pieData}
+                      data={candidates}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
                       label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
+                      outerRadius={100}
                       fill="#8884d8"
-                      dataKey="value"
+                      dataKey="voteCount"
                     >
-                      {pieData.map((entry, index) => (
+                      {candidates.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#1a1f2e', 
+                        border: '1px solid #EEFF00',
+                        borderRadius: '12px',
+                        color: '#fff'
+                      }} 
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
             {/* Candidates Table */}
-            <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 mb-6 border border-white/20">
-              <h2 className="text-xl font-bold text-white mb-4">👥 Candidates</h2>
+            <div className="glass p-6 mb-8">
+              <h3 className="text-2xl font-bold text-white mb-6">Candidates</h3>
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-white/20">
-                      <th className="text-left py-3 px-4 text-blue-200">Name</th>
-                      <th className="text-left py-3 px-4 text-blue-200">Employee ID</th>
-                      <th className="text-left py-3 px-4 text-blue-200">Department</th>
-                      <th className="text-left py-3 px-4 text-blue-200">Votes</th>
-                      <th className="text-left py-3 px-4 text-blue-200">Manifesto</th>
+                    <tr className="border-b border-[#EEFF00]/30">
+                      <th className="text-left py-4 px-4 text-gray-400 font-medium">Name</th>
+                      <th className="text-left py-4 px-4 text-gray-400 font-medium">Employee ID</th>
+                      <th className="text-left py-4 px-4 text-gray-400 font-medium">Department</th>
+                      <th className="text-left py-4 px-4 text-gray-400 font-medium">Votes</th>
+                      <th className="text-left py-4 px-4 text-gray-400 font-medium">Manifesto</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {candidates.map((candidate, idx) => (
-                      <tr key={idx} className="border-b border-white/10 hover:bg-white/5">
-                        <td className="py-3 px-4 text-white font-semibold">{candidate.name}</td>
-                        <td className="py-3 px-4 text-blue-200">{candidate.employeeId}</td>
-                        <td className="py-3 px-4 text-blue-200">{candidate.department}</td>
-                        <td className="py-3 px-4">
-                          <span className="bg-blue-500 text-white px-3 py-1 rounded-full font-bold">
+                    {candidates.map((candidate, index) => (
+                      <tr key={index} className="border-b border-gray-800 hover:bg-[#EEFF00]/10 transition-colors">
+                        <td className="py-4 px-4 text-white font-semibold">{candidate.name}</td>
+                        <td className="py-4 px-4 text-gray-300">{candidate.employeeId}</td>
+                        <td className="py-4 px-4 text-gray-300">{candidate.department}</td>
+                        <td className="py-4 px-4">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-[#EEFF00] text-[#0f1419]">
                             {candidate.voteCount}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
-                          {candidate.manifestoIPFS && (
+                        <td className="py-4 px-4">
+                          {candidate.manifestoIPFS ? (
                             <a
                               href={`https://ipfs.io/ipfs/${candidate.manifestoIPFS}`}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-400 hover:text-blue-300"
+                              className="text-[#EEFF00] hover:text-[#f5ff33] transition-colors"
                             >
-                              View IPFS
+                              View →
                             </a>
+                          ) : (
+                            <span className="text-gray-600">N/A</span>
                           )}
                         </td>
                       </tr>
@@ -277,58 +286,70 @@ export default function ElectionDashboard() {
               </div>
             </div>
 
-            {/* Live Audit Trail */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Audit Trail */}
-              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-                <h2 className="text-xl font-bold text-white mb-4">📜 Audit Trail</h2>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {auditTrail.map((record, idx) => (
-                    <div key={idx} className="bg-white/5 rounded-lg p-3 border border-white/10">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-white font-mono text-sm">
-                            Voter: {record.voterHash.slice(0, 10)}...{record.voterHash.slice(-8)}
-                          </div>
-                          <div className="text-blue-200 text-xs mt-1">
-                            {formatTime(record.timestamp)}
-                          </div>
+            {/* Live Updates & Audit Trail */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Live Updates */}
+              <div className="glass p-6">
+                <h3 className="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                  <span className="w-3 h-3 bg-[#EEFF00] rounded-full animate-pulse"></span>
+                  Live Updates
+                </h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {liveUpdates.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">No live updates yet</p>
+                  ) : (
+                    liveUpdates.map((update, index) => (
+                      <div key={index} className="bg-[#1a1f2e] border border-[#EEFF00]/20 rounded-xl p-4 animate-slide-in">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[#EEFF00] font-semibold">✓ Vote Cast</span>
+                          <span className="text-gray-500 text-sm">
+                            {new Date(update.timestamp).toLocaleTimeString()}
+                          </span>
                         </div>
-                        <span className="bg-green-500 text-white px-2 py-1 rounded text-xs">
-                          ✓ Verified
-                        </span>
+                        <p className="text-gray-400 text-sm font-mono">
+                          Voter: {update.data.voterHash.slice(0, 10)}...
+                        </p>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
 
-              {/* Live Updates */}
-              <div className="bg-white/10 backdrop-blur-lg rounded-xl p-6 border border-white/20">
-                <h2 className="text-xl font-bold text-white mb-4">⚡ Live Updates</h2>
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {liveUpdates.map((update, idx) => (
-                    <div key={idx} className="bg-green-500/20 rounded-lg p-3 border border-green-500/30 animate-pulse">
-                      <div className="flex items-center gap-2">
-                        <span className="text-2xl">🗳️</span>
-                        <div>
-                          <div className="text-white font-semibold">New Vote Cast!</div>
-                          <div className="text-green-200 text-sm">
-                            Block: {update.data.blockNumber} • {new Date(update.timestamp).toLocaleTimeString()}
-                          </div>
+              {/* Audit Trail */}
+              <div className="glass p-6">
+                <h3 className="text-2xl font-bold text-white mb-6">🔒 Audit Trail</h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {auditTrail.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">No audit records yet</p>
+                  ) : (
+                    auditTrail.map((record, index) => (
+                      <div key={index} className="bg-[#1a1f2e] border border-[#EEFF00]/20 rounded-xl p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[#EEFF00] font-semibold">
+                            {record.verified ? "✓ Verified" : "⚠ Pending"}
+                          </span>
+                          <span className="text-gray-500 text-sm">
+                            {new Date(record.timestamp * 1000).toLocaleString()}
+                          </span>
                         </div>
+                        <p className="text-gray-400 text-sm font-mono">
+                          Hash: {record.voterHash.slice(0, 20)}...
+                        </p>
                       </div>
-                    </div>
-                  ))}
-                  {liveUpdates.length === 0 && (
-                    <div className="text-center text-blue-200 py-8">
-                      Waiting for live updates...
-                    </div>
+                    ))
                   )}
                 </div>
               </div>
             </div>
           </>
+        )}
+
+        {elections.length === 0 && (
+          <div className="glass p-12 text-center">
+            <div className="text-6xl mb-4">🗳️</div>
+            <h3 className="text-2xl font-bold text-white mb-2">No Elections Yet</h3>
+            <p className="text-gray-400">Elections will appear here once they are created</p>
+          </div>
         )}
       </div>
     </div>

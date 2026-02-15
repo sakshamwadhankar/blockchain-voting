@@ -30,33 +30,57 @@ export default function VotingBooth() {
                 await electionService.initialize();
 
                 const count = await electionService.getTotalElections();
-                const fetchedElections = [];
 
-                // Valid election IDs start at 1
-                for (let i = 1; i < count; i++) {
-                    try {
-                        // 1. Fetch Chain Data
-                        const chainData = await electionService.getElection(i);
 
-                        // 2. Fetch Firebase Data
-                        let metaData = {};
+                // Valid election IDs start at 0
+                const startId = 0;
+                // Create an array of indices [0, 1, ..., count-1]
+                const electionIndices = Array.from({ length: count }, (_, i) => i);
+
+                // Fetch all elections in parallel
+                const fetchedElections = await Promise.all(
+                    electionIndices.map(async (i) => {
+                        // Helper for timeout
+                        const withTimeout = (promise, ms = 5000) => {
+                            return Promise.race([
+                                promise,
+                                new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), ms))
+                            ]);
+                        };
+
                         try {
-                            metaData = await FirebaseService.getElectionMetadata(i);
-                        } catch (e) {
-                            console.warn(`No metadata for election ${i}`, e);
-                        }
+                            // Parallelize fetch of Chain Data and Firebase Data for this election with timeout
+                            const [chainData, metaData] = await Promise.all([
+                                withTimeout(electionService.getElection(i))
+                                    .catch(e => {
+                                        console.error(`Failed to load chain data for ${i}`, e);
+                                        return null;
+                                    }),
+                                withTimeout(FirebaseService.getElectionMetadata(i))
+                                    .catch(e => {
+                                        console.warn(`No metadata for election ${i}`, e);
+                                        return {};
+                                    })
+                            ]);
 
-                        fetchedElections.push({
-                            id: i,
-                            ...chainData,
-                            ...metaData, // Merges title, description, bannerUrl
-                            position: chainData.position || metaData?.title || "Untitled Election"
-                        });
-                    } catch (err) {
-                        console.error(`Failed to load election ${i}`, err);
-                    }
-                }
-                setElections(fetchedElections);
+                            if (!chainData) return null;
+                            if (metaData.isDeleted) return null; // Filter out deleted elections
+
+                            return {
+                                id: i,
+                                ...chainData,
+                                ...metaData, // Merges title, description, bannerUrl
+                                position: chainData.position || metaData?.title || "Untitled Election"
+                            };
+                        } catch (err) {
+                            console.error(`Failed to load election ${i}`, err);
+                            return null;
+                        }
+                    })
+                );
+
+                // Filter out any nulls from failed fetches or deleted elections
+                setElections(fetchedElections.filter(e => e !== null));
             } catch (err) {
                 console.error("Failed to load elections:", err);
                 setError("Failed to load active elections. Is MetaMask connected?");
@@ -208,8 +232,8 @@ export default function VotingBooth() {
 
                 {voteStatus && (
                     <div className={`mb-8 p-4 rounded-xl border flex items-center gap-3 ${voteStatus.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
-                            voteStatus.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
-                                'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                        voteStatus.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+                            'bg-blue-500/10 border-blue-500/30 text-blue-300'
                         }`}>
                         <div className="text-2xl">
                             {voteStatus.type === 'success' ? '✅' : voteStatus.type === 'error' ? '❌' : 'ℹ️'}
@@ -313,13 +337,30 @@ export default function VotingBooth() {
                         <div
                             key={election.id}
                             onClick={() => setSelectedElection(election)}
-                            className="group relative h-80 rounded-3xl overflow-hidden cursor-pointer border border-slate-700/50 hover:border-indigo-500/50 transition-all duration-500 shadow-xl shadow-black/20"
+                            className="group relative h-80 rounded-3xl overflow-hidden cursor-pointer border border-slate-700/50 hover:border-indigo-500/50 transition-all duration-500 shadow-xl shadow-black/20 bg-slate-900"
                         >
-                            <img
-                                src={election.bannerUrl || "https://images.unsplash.com/photo-1540910419868-474947cebacb?auto=format&fit=crop&q=80"}
-                                alt={election.position}
-                                className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                            />
+                            {election.bannerUrl ? (
+                                <img
+                                    src={election.bannerUrl}
+                                    alt={election.position}
+                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                    onError={(e) => {
+                                        e.target.style.display = 'none'; // Hide broken image
+                                        // The background gradient (below) will show through if we structure it right, 
+                                        // or we could set a fallback src, but user asked for "different UI".
+                                        // For now, hiding it reveals the parent bg-slate-900.
+                                    }}
+                                />
+                            ) : (
+                                <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-blue-900/40 via-purple-900/40 to-indigo-900/40 group-hover:scale-110 transition-transform duration-700">
+                                    <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-400 via-cyan-400 to-transparent"></div>
+                                    <div className="absolute bottom-0 right-0 p-10 opacity-20">
+                                        <svg width="120" height="120" viewBox="0 0 24 24" fill="currentColor" className="text-white transform rotate-12">
+                                            <path d="M12 2L2 7l10 5 10-5-10-5zm0 9l2.5-1.25L12 8.5l-2.5 1.25L12 11zm0 2.5l-5-2.5-5 2.5L12 22l10-8.5-5-2.5-5 2.5z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                            )}
                             <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/40 to-transparent p-6 flex flex-col justify-end">
                                 <Link
                                     to={`/results/${election.id}`}

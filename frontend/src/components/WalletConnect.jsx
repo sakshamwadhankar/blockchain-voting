@@ -7,10 +7,7 @@ export default function WalletConnect() {
         return (
             <button
                 onClick={connect}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold
-                   bg-gradient-to-r from-indigo-500 to-cyan-500 text-white
-                   hover:from-indigo-400 hover:to-cyan-400 transition-all duration-300
-                   shadow-lg shadow-indigo-500/25 cursor-pointer text-sm"
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold btn-yellow transition-all duration-300 shadow-lg cursor-pointer text-sm"
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -26,12 +23,12 @@ export default function WalletConnect() {
     return (
         <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 px-4 py-2 rounded-xl glass text-sm">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-slate-300 font-mono">
+                <span className="w-2 h-2 rounded-full bg-[#EEFF00] animate-pulse" />
+                <span className="text-gray-300 font-mono">
                     {account.slice(0, 6)}...{account.slice(-4)}
                 </span>
                 {chainId && (
-                    <span className="text-xs text-slate-500">#{chainId}</span>
+                    <span className="text-xs text-gray-500">#{chainId}</span>
                 )}
             </div>
             <button
