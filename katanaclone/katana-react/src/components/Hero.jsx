@@ -4,7 +4,16 @@ export default function Hero() {
     return (
         <section className="hero" id="hero">
             <div className="hero-container">
-                <h1 className="hero-title typo-h1" style={{ color: '#F6FF0D' }}>
+                <h1 className="hero-title" style={{ 
+                    color: '#F6FF0D',
+                    fontFamily: "'OTJubilee Diamond', sans-serif",
+                    fontSize: 'clamp(80px, 18vw, 240px)',
+                    fontWeight: 900,
+                    letterSpacing: '-0.04em',
+                    lineHeight: 0.9,
+                    textTransform: 'uppercase',
+                    marginBottom: '32px'
+                }}>
                     Kwote
                 </h1>
                 <p className="hero-subtitle" style={{ color: '#F6FF0D', fontSize: '1.2em', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: '8px', opacity: 0.8 }}>

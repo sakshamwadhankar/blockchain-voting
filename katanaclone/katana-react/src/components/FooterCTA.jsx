@@ -4,7 +4,7 @@ import SectionParticles from './SectionParticles'
 
 export default function FooterCTA() {
     return (
-        <section className="section footer-cta" id="footer-cta-section">
+        <section className="footer-cta" id="footer-cta-section">
             <SectionParticles variant="mixed" density={50} />
             <div className="section-container">
                 <div style={{ maxWidth: 800, margin: '0 auto', textAlign: 'center' }}>

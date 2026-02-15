@@ -14,7 +14,7 @@ export default function Newsletter() {
     }
 
     return (
-        <section className="section newsletter" id="newsletter-section">
+        <section className="newsletter" id="newsletter-section">
             <div className="section-container">
                 <AnimatedHeadline
                     text="request early access."

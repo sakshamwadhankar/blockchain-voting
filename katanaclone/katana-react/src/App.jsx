@@ -15,6 +15,7 @@ import Scene3D from './components/Scene3D'
 import StarField from './components/StarField'
 import CustomCursor from './components/CustomCursor'
 import Scrollbar from './components/Scrollbar'
+import SectionTransition from './components/SectionTransition'
 
 import VerifyPage from './pages/VerifyPage'
 import VotePage from './pages/VotePage'
@@ -27,13 +28,27 @@ function HomePage() {
       <Scene3D />
       <main>
         <Hero />
-        <Liquidity />
-        <Flywheel />
-        <Quotes />
-        <Features />
-        <Roadmap />
-        <Newsletter />
-        <FooterCTA />
+        <SectionTransition className="section visible">
+          <Liquidity />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <Flywheel />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <Quotes />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <Features />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <Roadmap />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <Newsletter />
+        </SectionTransition>
+        <SectionTransition className="section">
+          <FooterCTA />
+        </SectionTransition>
       </main>
       <Footer />
     </>
