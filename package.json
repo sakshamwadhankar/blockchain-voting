@@ -1,22 +1,35 @@
 {
-  "name": "blockchain-hackathon-template",
+  "name": "kwote-blockchain-voting",
   "version": "1.0.0",
-  "description": "A comprehensive blockchain hackathon template with ERC20, ERC721, and ERC1155 contracts",
+  "description": "KWOTE - Secure blockchain-powered corporate voting platform with transparent, tamper-proof elections",
+  "author": "KWOTE Team",
+  "license": "MIT",
+  "keywords": [
+    "blockchain",
+    "voting",
+    "ethereum",
+    "smart-contracts",
+    "elections",
+    "governance",
+    "web3"
+  ],
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
     "test:gas": "REPORT_GAS=true hardhat test",
+    "coverage": "hardhat coverage",
     "node": "hardhat node",
     "clean": "hardhat clean",
-    "deploy:local": "hardhat run scripts/deploy.ts --network hardhat",
-    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
-    "deploy:amoy": "hardhat run scripts/deploy.ts --network amoy",
-    "deploy:baseSepolia": "hardhat run scripts/deploy.ts --network baseSepolia",
-    "deploy:arbitrumSepolia": "hardhat run scripts/deploy.ts --network arbitrumSepolia",
-    "deploy:optimismSepolia": "hardhat run scripts/deploy.ts --network optimismSepolia",
-    "deploy:bscTestnet": "hardhat run scripts/deploy.ts --network bscTestnet",
-    "deploy:fuji": "hardhat run scripts/deploy.ts --network fuji",
-    "deploy:scrollSepolia": "hardhat run scripts/deploy.ts --network scrollSepolia"
+    "deploy:local": "hardhat run scripts/deploy-election.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy-election.js --network sepolia",
+    "deploy:mainnet": "hardhat run scripts/deploy-election.js --network mainnet",
+    "setup": "npm install && cd katana-react && npm install && cd ../backend && npm install",
+    "dev:blockchain": "hardhat node",
+    "dev:backend": "cd backend && npm start",
+    "dev:frontend": "cd katana-react && npm run dev",
+    "start:all": "concurrently \"npm run dev:blockchain\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,json,md}\""
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
@@ -26,5 +39,17 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.1.0",
     "firebase-admin": "^13.6.1"
-  }
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/kwote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/kwote/issues"
+  },
+  "homepage": "https://github.com/yourusername/kwote#readme"
 }
